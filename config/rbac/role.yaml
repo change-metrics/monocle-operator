@@ -1,0 +1,33 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles/status
+  verbs:
+  - get
+  - patch
+  - update

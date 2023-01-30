@@ -1,0 +1,27 @@
+# permissions for end users to view monocles.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: monocle-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: monocle-operator
+    app.kubernetes.io/part-of: monocle-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: monocle-viewer-role
+rules:
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles/status
+  verbs:
+  - get

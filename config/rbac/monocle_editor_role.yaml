@@ -1,0 +1,31 @@
+# permissions for end users to edit monocles.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: monocle-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: monocle-operator
+    app.kubernetes.io/part-of: monocle-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: monocle-editor-role
+rules:
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles/status
+  verbs:
+  - get
