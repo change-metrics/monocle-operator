@@ -212,12 +212,6 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Info("Resource fetched successfuly", "name", elasticStatefulSetName)
 	}
 
-	// Reconcile later if replicas are not ready
-	if !elasticSearchReady() {
-		logger.Info("monocle-elastic is not ready")
-		reconcileLater(nil)
-	}
-
 	// Handle service for elastic
 	elasticServiceName := "monocle-elastic-service"
 	elasticService := corev1.Service{
@@ -310,6 +304,19 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		"app":  "monocle",
 		"tier": "api",
 	}
+	// Func to get the last condition of the Monocle API Deployment instance
+	apiDeploymentLastCondition := func() appsv1.DeploymentCondition {
+		if len(apiDeployment.Status.Conditions) > 0 {
+			return apiDeployment.Status.Conditions[0]
+		} else {
+			return appsv1.DeploymentCondition{}
+		}
+	}
+	isDeploymentReady := func(cond appsv1.DeploymentCondition) bool {
+		return cond.Status == corev1.ConditionTrue &&
+			cond.Type == appsv1.DeploymentAvailable
+	}
+	monoclePublicURL := "http://localhost:8090"
 
 	err = r.Client.Get(
 		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: req.Namespace}, &apiDeployment)
@@ -339,6 +346,10 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 							{
 								Name:  "MONOCLE_ELASTIC_URL",
 								Value: "http://" + elasticServiceName + ":" + strconv.Itoa(elasticPort),
+							},
+							{
+								Name:  "MONOCLE_PUBLIC_URL",
+								Value: monoclePublicURL,
 							},
 						},
 						Ports: []corev1.ContainerPort{
@@ -397,20 +408,55 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Info("Resource fetched successfuly", "name", apiDeploymentName)
 	}
 
-	// Func to get the last condition of the Monocle API Deployment instance
-	apiDeploymentLastCondition := func() appsv1.DeploymentCondition {
-		if len(apiDeployment.Status.Conditions) > 0 {
-			return apiDeployment.Status.Conditions[0]
-		} else {
-			return appsv1.DeploymentCondition{}
-		}
+	// Handle service for api
+	apiServiceName := "monocle-api-service"
+	apiService := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      apiServiceName,
+			Namespace: req.Namespace,
+		},
 	}
-	isDeploymentReady := func(cond appsv1.DeploymentCondition) bool {
-		return cond.Status == corev1.ConditionTrue &&
-			cond.Type == appsv1.DeploymentAvailable
+	err = r.Client.Get(
+		ctx, client.ObjectKey{Name: apiServiceName, Namespace: req.Namespace}, &apiService)
+	if err != nil && k8s_errors.IsNotFound(err) {
+		apiService.Spec = corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "monocle-api-port",
+					Protocol: corev1.ProtocolTCP,
+					Port:     int32(apiPort),
+				},
+			},
+			Selector: apiMatchLabels,
+		}
+		if err := ctrl_util.SetControllerReference(&instance, &apiService, r.Scheme); err != nil {
+			logger.Info("Unable to set controller reference", "name", apiServiceName)
+			return reconcileLater(err)
+		}
+		logger.Info("Creating Service", "name", apiServiceName)
+		if err := r.Create(ctx, &apiService); err != nil {
+			logger.Info("Unable to create service", "name", apiService)
+			return reconcileLater(err)
+		}
+	} else if err != nil {
+		// Handle the unexpected err
+		logger.Info("Unable to get resource", "name", apiServiceName)
+		return reconcileLater(err)
+	} else {
+		// Eventually handle resource update
+		logger.Info("Resource fetched successfuly", "name", apiServiceName)
 	}
 
-	// Continue reconcile until deployment is ready
+	////////////////////////////////////////////////////////
+	//         Checking elastic and api status            //
+	////////////////////////////////////////////////////////
+
+	// Continue reconcile until elastic is ready
+	if !elasticSearchReady() {
+		logger.Info("monocle-elastic is not ready")
+		reconcileLater(nil)
+	}
+	// Continue reconcile until api is ready
 	if isDeploymentReady(apiDeploymentLastCondition()) == false {
 		logger.Info("monocle-api is not ready", "condition", apiDeploymentLastCondition())
 		return reconcileLater(nil)
