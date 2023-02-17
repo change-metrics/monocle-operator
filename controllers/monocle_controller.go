@@ -34,6 +34,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl_util "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/thanhpk/randstr"
 )
 
 // MonocleReconciler reconciles a Monocle object
@@ -252,6 +254,47 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	////////////////////////////////////////////////////////
+	//       Handle the Monocle API Secret Instance       //
+	////////////////////////////////////////////////////////
+
+	// This secret contains environment variables required by the
+	// API and/or crawlers. The CRAWLERS_API_KEY entry is
+	// mandatory for crawlers to authenticate against the API.
+
+	// TODO - when secret data is updated then need to restart the API
+
+	apiSecretName := "api"
+	apiSecretData := map[string][]byte{
+		"CRAWLERS_API_KEY": []byte(randstr.String(24))}
+	apiSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      apiSecretName,
+			Namespace: req.Namespace},
+	}
+	err = r.Client.Get(
+		ctx, client.ObjectKey{Name: apiSecretName, Namespace: req.Namespace}, &apiSecret)
+	if err != nil && k8s_errors.IsNotFound(err) {
+		// Create the secret
+		apiSecret.Data = apiSecretData
+		if err := ctrl_util.SetControllerReference(&instance, &apiSecret, r.Scheme); err != nil {
+			logger.Info("Unable to set controller reference", "name", apiSecretName)
+			return reconcileLater(err)
+		}
+		logger.Info("Creating secret", "name", apiSecretName)
+		if err := r.Create(ctx, &apiSecret); err != nil {
+			logger.Info("Unable to create secret", "name", apiSecretName)
+			return reconcileLater(err)
+		}
+	} else if err != nil {
+		// Handle the unexpected err
+		logger.Info("Unable to get resource", "name", apiSecretName)
+		return reconcileLater(err)
+	} else {
+		// Eventually handle resource update
+		logger.Info("Resource fetched successfuly", "name", apiSecretName)
+	}
+
+	////////////////////////////////////////////////////////
 	//     Handle the Monocle API ConfigMap Instance      //
 	////////////////////////////////////////////////////////
 
@@ -356,6 +399,17 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 							{
 								Name:  "MONOCLE_PUBLIC_URL",
 								Value: monoclePublicURL,
+							},
+							{
+								Name: "CRAWLERS_API_KEY",
+								ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: apiSecretName,
+										},
+										Key: "CRAWLERS_API_KEY",
+									},
+								},
 							},
 						},
 						Ports: []corev1.ContainerPort{
@@ -483,6 +537,7 @@ func (r *MonocleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&monoclev1alpha1.Monocle{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Secret{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
