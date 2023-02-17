@@ -316,7 +316,13 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return cond.Status == corev1.ConditionTrue &&
 			cond.Type == appsv1.DeploymentAvailable
 	}
+
+	// TODO - Handle API restart when this setting is updated
 	monoclePublicURL := "http://localhost:8090"
+	if instance.Spec.MonoclePublicURL != "" {
+		monoclePublicURL = instance.Spec.MonoclePublicURL
+	}
+	logger.Info("Monocle public URL set to", "url", monoclePublicURL)
 
 	err = r.Client.Get(
 		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: req.Namespace}, &apiDeployment)

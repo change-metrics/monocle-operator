@@ -35,9 +35,8 @@ spec:
           spec:
             description: MonocleSpec defines the desired state of Monocle
             properties:
-              foo:
-                description: Foo is an example field of Monocle. Edit monocle_types.go
-                  to remove/update
+              monoclePublicURL:
+                default: https://localhost:8090
                 type: string
             type: object
           status:

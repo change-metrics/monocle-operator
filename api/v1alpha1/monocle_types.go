@@ -28,8 +28,8 @@ type MonocleSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Monocle. Edit monocle_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	//+kubebuilder:default:="https://localhost:8090"
+	MonoclePublicURL string `json:"monoclePublicURL,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle
