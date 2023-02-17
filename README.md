@@ -1,80 +1,85 @@
 # monocle-operator
-// TODO(user): Add simple overview of use/purpose
+
+A k8s operator for [Monocle](https://github.com/change-metrics/monocle).
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
 
-## Getting Started
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
+The operator is currently in alpha version and should not be used in production.
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+The status is: Work In Progress.
 
-```sh
-kubectl apply -f config/samples/
+### Day 1 - Basic Install
+
+Automatic application provisioning and config management
+
+tasks:
+
+- [X] Elastic / API / Crawler deployment support
+- [] Validate config ConfigMap update
+- [] Set Monocle Resource Status
+- [] Produce and publish the operator container image
+- [] Document operator deployment
+- [] Git config support
+- Far more task TBD
+
+### Day 2 - Seamless Upgrades
+
+Support minor version upgrade
+
+tasks: TBD
+
+### Day 3 - Full lifecycle
+
+Application and storage lifecycle (backup and failure recovery)
+
+tasks: TBD
+
+### Day 4 - Deep insights
+
+Metrics, alerts, log processing
+
+tasks: TBD
+
+### Day 5 - Auto-pilot
+
+Metrics, alerts, log processing
+
+tasks: TBD
+
+## Hack on the operator
+
+### Dependencies
+
+The operator code is managed via the [Operator SDK](https://sdk.operatorframework.io/). Please follow [installation instructions](https://sdk.operatorframework.io/docs/building-operators/golang/installation/) to install the `operator-sdk` CLI tool.
+
+`kubectl` and `go` are required tools.
+
+Optionaly the project provides a `flake` file for nix users. See [flake.nix](./flake.nix)
+and run `nix develop`.
+
+### Start the operator in dev mode
+
+Assuming is properly configured `~/.kube/config` file simply run:
+
+```bash
+$ go run ./main.go
 ```
 
-2. Build and push your image to the location specified by `IMG`:
-	
-```sh
-make docker-build docker-push IMG=<some-registry>/monocle-operator:tag
-```
-	
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+In another terminal apply the Custom Resource:
 
-```sh
-make deploy IMG=<some-registry>/monocle-operator:tag
+```bash
+$ kubectl apply -f config/samples/monocle_v1alpha1_monocle-alt.yaml
+# The reconcile loop should stop shortly and you should see in
+# the other terminal:
+# 1.676629527659292e+09   INFO    monocle operand reconcile terminated
 ```
 
-### Uninstall CRDs
-To delete the CRDs from the cluster:
+Setup a port forward to access the Monocle Web UI:
 
-```sh
-make uninstall
+```bash
+$ kubectl port-forward service/monocle-sample-api 8090:8080
+$ firefox http://localhost:8090
 ```
-
-### Undeploy controller
-UnDeploy the controller to the cluster:
-
-```sh
-make undeploy
-```
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-### How it works
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/) 
-which provides a reconcile function responsible for synchronizing resources untile the desired state is reached on the cluster 
-
-### Test It Out
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 

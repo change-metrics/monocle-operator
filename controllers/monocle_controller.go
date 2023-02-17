@@ -34,6 +34,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl_util "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/thanhpk/randstr"
 )
 
 // MonocleReconciler reconciles a Monocle object
@@ -87,11 +89,13 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return reconcileLater(err)
 	}
 
+	resourceName := func(rName string) string { return instance.Name + "-" + rName }
+
 	////////////////////////////////////////////////////////
 	//  Handle the Monocle Elastic StatefulSet instance   //
 	////////////////////////////////////////////////////////
 
-	elasticStatefulSetName := "monocle-elastic"
+	elasticStatefulSetName := resourceName("elastic")
 	elasticStatefulSet := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      elasticStatefulSetName,
@@ -118,7 +122,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		ctx, client.ObjectKey{Name: elasticStatefulSetName, Namespace: req.Namespace}, &elasticStatefulSet)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		// Create the StatefulSet
-		elasticDataVolumeName := "elastic-data-volume"
+		elasticDataVolumeName := resourceName("elastic-data-volume")
 		// Once created StatefulSet selector is immutable
 		elasticStatefulSet.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: elasticMatchLabels,
@@ -157,7 +161,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				},
 				Containers: []corev1.Container{
 					{
-						Name:  "elastic-pod",
+						Name:  resourceName("elastic-pod"),
 						Image: "docker.elastic.co/elasticsearch/elasticsearch:7.17.5",
 						Env: []corev1.EnvVar{
 							{
@@ -213,7 +217,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Handle service for elastic
-	elasticServiceName := "monocle-elastic-service"
+	elasticServiceName := resourceName("elastic")
 	elasticService := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      elasticServiceName,
@@ -226,7 +230,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		elasticService.Spec = corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:     "monocle-elastic-port",
+					Name:     resourceName("elastic-port"),
 					Protocol: corev1.ProtocolTCP,
 					Port:     int32(elasticPort),
 				},
@@ -252,10 +256,51 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	////////////////////////////////////////////////////////
+	//       Handle the Monocle API Secret Instance       //
+	////////////////////////////////////////////////////////
+
+	// This secret contains environment variables required by the
+	// API and/or crawlers. The CRAWLERS_API_KEY entry is
+	// mandatory for crawlers to authenticate against the API.
+
+	// TODO - when secret data is updated then need to restart the API
+
+	apiSecretName := resourceName("api")
+	apiSecretData := map[string][]byte{
+		"CRAWLERS_API_KEY": []byte(randstr.String(24))}
+	apiSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      apiSecretName,
+			Namespace: req.Namespace},
+	}
+	err = r.Client.Get(
+		ctx, client.ObjectKey{Name: apiSecretName, Namespace: req.Namespace}, &apiSecret)
+	if err != nil && k8s_errors.IsNotFound(err) {
+		// Create the secret
+		apiSecret.Data = apiSecretData
+		if err := ctrl_util.SetControllerReference(&instance, &apiSecret, r.Scheme); err != nil {
+			logger.Info("Unable to set controller reference", "name", apiSecretName)
+			return reconcileLater(err)
+		}
+		logger.Info("Creating secret", "name", apiSecretName)
+		if err := r.Create(ctx, &apiSecret); err != nil {
+			logger.Info("Unable to create secret", "name", apiSecretName)
+			return reconcileLater(err)
+		}
+	} else if err != nil {
+		// Handle the unexpected err
+		logger.Info("Unable to get resource", "name", apiSecretName)
+		return reconcileLater(err)
+	} else {
+		// Eventually handle resource update
+		logger.Info("Resource fetched successfuly", "name", apiSecretName)
+	}
+
+	////////////////////////////////////////////////////////
 	//     Handle the Monocle API ConfigMap Instance      //
 	////////////////////////////////////////////////////////
 
-	apiConfigMapName := "api-config-map"
+	apiConfigMapName := resourceName("api")
 	apiConfigMapData := map[string]string{
 		"config.yaml": "workspaces: []"}
 	apiConfigMap := corev1.ConfigMap{
@@ -291,7 +336,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	//     Handle the Monocle API Deployment instance     //
 	////////////////////////////////////////////////////////
 
-	apiDeploymentName := "monocle-api"
+	apiDeploymentName := resourceName("api")
 	apiDeployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiDeploymentName,
@@ -316,13 +361,19 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return cond.Status == corev1.ConditionTrue &&
 			cond.Type == appsv1.DeploymentAvailable
 	}
+
+	// TODO - Handle API restart when this setting is updated
 	monoclePublicURL := "http://localhost:8090"
+	if instance.Spec.MonoclePublicURL != "" {
+		monoclePublicURL = instance.Spec.MonoclePublicURL
+	}
+	logger.Info("Monocle public URL set to", "url", monoclePublicURL)
 
 	err = r.Client.Get(
 		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: req.Namespace}, &apiDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		// Create the deployment
-		apiConfigMapVolumeName := "api-cm-volume"
+		apiConfigMapVolumeName := resourceName("api-cm-volume")
 		// Once created Deployment selector is immutable
 		apiDeployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: apiMatchLabels,
@@ -339,7 +390,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				RestartPolicy: corev1.RestartPolicyAlways,
 				Containers: []corev1.Container{
 					{
-						Name:    "api-pod",
+						Name:    resourceName("api-pod"),
 						Image:   "quay.io/change-metrics/monocle:1.8.0",
 						Command: []string{"monocle", "api"},
 						Env: []corev1.EnvVar{
@@ -350,6 +401,17 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 							{
 								Name:  "MONOCLE_PUBLIC_URL",
 								Value: monoclePublicURL,
+							},
+							{
+								Name: "CRAWLERS_API_KEY",
+								ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: apiSecretName,
+										},
+										Key: "CRAWLERS_API_KEY",
+									},
+								},
 							},
 						},
 						Ports: []corev1.ContainerPort{
@@ -409,7 +471,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Handle service for api
-	apiServiceName := "monocle-api-service"
+	apiServiceName := resourceName("api")
 	apiService := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiServiceName,
@@ -422,7 +484,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		apiService.Spec = corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:     "monocle-api-port",
+					Name:     resourceName("api-port"),
 					Protocol: corev1.ProtocolTCP,
 					Port:     int32(apiPort),
 				},
@@ -448,7 +510,131 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	////////////////////////////////////////////////////////
-	//         Checking elastic and api status            //
+	//   Handle the Monocle Crawler Deployment instance   //
+	////////////////////////////////////////////////////////
+
+	crawlerDeploymentName := resourceName("crawler")
+	crawlerDeployment := appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crawlerDeploymentName,
+			Namespace: req.Namespace,
+		},
+	}
+	crawlerReplicasCount := int32(1)
+	crawlerPort := 9001
+	crawlerMatchLabels := map[string]string{
+		"app":  "monocle",
+		"tier": "crawler",
+	}
+	// Func to get the last condition of the Monocle crawler Deployment instance
+	crawlerDeploymentLastCondition := func() appsv1.DeploymentCondition {
+		if len(crawlerDeployment.Status.Conditions) > 0 {
+			return crawlerDeployment.Status.Conditions[0]
+		} else {
+			return appsv1.DeploymentCondition{}
+		}
+	}
+
+	err = r.Client.Get(
+		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: req.Namespace}, &crawlerDeployment)
+	if err != nil && k8s_errors.IsNotFound(err) {
+		// Create the deployment
+		crawlerConfigMapVolumeName := resourceName("crawler-cm-volume")
+		// Once created Deployment selector is immutable
+		crawlerDeployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: crawlerMatchLabels,
+		}
+		// TODO - Set the strategy
+		// Set replicas count
+		crawlerDeployment.Spec.Replicas = &crawlerReplicasCount
+		// Set the Deployment pod template
+		crawlerDeployment.Spec.Template = corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: crawlerMatchLabels,
+			},
+			Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyAlways,
+				Containers: []corev1.Container{
+					{
+						Name:    resourceName("crawler-pod"),
+						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Command: []string{"monocle", "crawler"},
+						Env: []corev1.EnvVar{
+							{
+								Name:  "MONOCLE_PUBLIC_URL",
+								Value: monoclePublicURL,
+							},
+							{
+								Name: "CRAWLERS_API_KEY",
+								ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: apiSecretName,
+										},
+										Key: "CRAWLERS_API_KEY",
+									},
+								},
+							},
+						},
+						Ports: []corev1.ContainerPort{
+							{
+								ContainerPort: int32(crawlerPort),
+							},
+						},
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/health",
+									Port: intstr.FromInt(crawlerPort),
+								},
+							},
+							TimeoutSeconds:   30,
+							FailureThreshold: 6,
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      crawlerConfigMapVolumeName,
+								ReadOnly:  true,
+								MountPath: "/etc/monocle",
+							},
+						},
+					},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: crawlerConfigMapVolumeName,
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{
+									// We use the API config for now
+									Name: apiConfigMapName,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		if err := ctrl_util.SetControllerReference(&instance, &crawlerDeployment, r.Scheme); err != nil {
+			logger.Info("Unable to set controller reference", "name", crawlerDeploymentName)
+			return reconcileLater(err)
+		}
+		logger.Info("Creating Deployment", "name", crawlerDeploymentName)
+		if err := r.Create(ctx, &crawlerDeployment); err != nil {
+			logger.Info("Unable to create deployment", "name", crawlerDeploymentName)
+			return reconcileLater(err)
+		}
+	} else if err != nil {
+		// Handle the unexpected err
+		logger.Info("Unable to get resource", "name", crawlerDeploymentName)
+		return reconcileLater(err)
+	} else {
+		// Eventually handle resource update
+		logger.Info("Resource fetched successfuly", "name", crawlerDeploymentName)
+	}
+
+	////////////////////////////////////////////////////////
+	//           Checking resources statuses              //
 	////////////////////////////////////////////////////////
 
 	// Continue reconcile until elastic is ready
@@ -459,6 +645,11 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Continue reconcile until api is ready
 	if isDeploymentReady(apiDeploymentLastCondition()) == false {
 		logger.Info("monocle-api is not ready", "condition", apiDeploymentLastCondition())
+		return reconcileLater(nil)
+	}
+	// Continue reconcile until crawler is ready
+	if isDeploymentReady(crawlerDeploymentLastCondition()) == false {
+		logger.Info("monocle-crawler is not ready", "condition", crawlerDeploymentLastCondition())
 		return reconcileLater(nil)
 	}
 
@@ -477,6 +668,7 @@ func (r *MonocleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&monoclev1alpha1.Monocle{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Secret{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
