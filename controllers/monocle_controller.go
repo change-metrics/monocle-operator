@@ -89,11 +89,13 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return reconcileLater(err)
 	}
 
+	resourceName := func(rName string) string { return instance.Name + "-" + rName }
+
 	////////////////////////////////////////////////////////
 	//  Handle the Monocle Elastic StatefulSet instance   //
 	////////////////////////////////////////////////////////
 
-	elasticStatefulSetName := "monocle-elastic"
+	elasticStatefulSetName := resourceName("elastic")
 	elasticStatefulSet := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      elasticStatefulSetName,
@@ -120,7 +122,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		ctx, client.ObjectKey{Name: elasticStatefulSetName, Namespace: req.Namespace}, &elasticStatefulSet)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		// Create the StatefulSet
-		elasticDataVolumeName := "elastic-data-volume"
+		elasticDataVolumeName := resourceName("elastic-data-volume")
 		// Once created StatefulSet selector is immutable
 		elasticStatefulSet.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: elasticMatchLabels,
@@ -159,7 +161,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				},
 				Containers: []corev1.Container{
 					{
-						Name:  "elastic-pod",
+						Name:  resourceName("elastic-pod"),
 						Image: "docker.elastic.co/elasticsearch/elasticsearch:7.17.5",
 						Env: []corev1.EnvVar{
 							{
@@ -215,7 +217,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Handle service for elastic
-	elasticServiceName := "monocle-elastic-service"
+	elasticServiceName := resourceName("elastic")
 	elasticService := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      elasticServiceName,
@@ -228,7 +230,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		elasticService.Spec = corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:     "monocle-elastic-port",
+					Name:     resourceName("elastic-port"),
 					Protocol: corev1.ProtocolTCP,
 					Port:     int32(elasticPort),
 				},
@@ -263,7 +265,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// TODO - when secret data is updated then need to restart the API
 
-	apiSecretName := "api"
+	apiSecretName := resourceName("api")
 	apiSecretData := map[string][]byte{
 		"CRAWLERS_API_KEY": []byte(randstr.String(24))}
 	apiSecret := corev1.Secret{
@@ -298,7 +300,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	//     Handle the Monocle API ConfigMap Instance      //
 	////////////////////////////////////////////////////////
 
-	apiConfigMapName := "api-config-map"
+	apiConfigMapName := resourceName("api")
 	apiConfigMapData := map[string]string{
 		"config.yaml": "workspaces: []"}
 	apiConfigMap := corev1.ConfigMap{
@@ -334,7 +336,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	//     Handle the Monocle API Deployment instance     //
 	////////////////////////////////////////////////////////
 
-	apiDeploymentName := "monocle-api"
+	apiDeploymentName := resourceName("api")
 	apiDeployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiDeploymentName,
@@ -371,7 +373,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: req.Namespace}, &apiDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		// Create the deployment
-		apiConfigMapVolumeName := "api-cm-volume"
+		apiConfigMapVolumeName := resourceName("api-cm-volume")
 		// Once created Deployment selector is immutable
 		apiDeployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: apiMatchLabels,
@@ -388,7 +390,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				RestartPolicy: corev1.RestartPolicyAlways,
 				Containers: []corev1.Container{
 					{
-						Name:    "api-pod",
+						Name:    resourceName("api-pod"),
 						Image:   "quay.io/change-metrics/monocle:1.8.0",
 						Command: []string{"monocle", "api"},
 						Env: []corev1.EnvVar{
@@ -469,7 +471,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Handle service for api
-	apiServiceName := "monocle-api-service"
+	apiServiceName := resourceName("api")
 	apiService := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiServiceName,
@@ -482,7 +484,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		apiService.Spec = corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:     "monocle-api-port",
+					Name:     resourceName("api-port"),
 					Protocol: corev1.ProtocolTCP,
 					Port:     int32(apiPort),
 				},
