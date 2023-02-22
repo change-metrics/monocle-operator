@@ -302,7 +302,11 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	apiConfigMapName := resourceName("api")
 	apiConfigMapData := map[string]string{
-		"config.yaml": "workspaces: []"}
+		"config.yaml": `
+workspaces:
+  - name: demo
+    crawlers: []
+`}
 	apiConfigMap := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiConfigMapName,
@@ -513,6 +517,8 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	//   Handle the Monocle Crawler Deployment instance   //
 	////////////////////////////////////////////////////////
 
+	monocleAPIInternalURL := "http://" + apiServiceName + ":" + strconv.Itoa(apiPort)
+
 	crawlerDeploymentName := resourceName("crawler")
 	crawlerDeployment := appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -562,7 +568,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 						Env: []corev1.EnvVar{
 							{
 								Name:  "MONOCLE_PUBLIC_URL",
-								Value: monoclePublicURL,
+								Value: monocleAPIInternalURL,
 							},
 							{
 								Name: "CRAWLERS_API_KEY",
