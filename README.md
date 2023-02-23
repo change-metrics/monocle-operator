@@ -15,7 +15,8 @@ Automatic application provisioning and config management
 tasks:
 
 - [X] Elastic / API / Crawler deployment support
-- [] Validate config ConfigMap update
+- [X] Validate config ConfigMap update
+- [] Handle secret data update
 - [] Set Monocle Resource Status
 - [] Produce and publish the operator container image
 - [] Document operator deployment
@@ -80,6 +81,24 @@ Setup a port forward to access the Monocle Web UI:
 $ kubectl port-forward service/monocle-sample-api 8090:8080
 $ firefox http://localhost:8090
 ```
+
+Edit the Monocle config:
+
+```bash
+$ kubectl edit cm monocle-sample-api 
+```
+
+The Monocle API and Crawler process detect that the config data (exposed via a ConfigMap mounted
+as a volume) changed and automatically handle the change.
+
+
+Elastic volume is persistant so you might want to wipe the Elastic data to
+start a fresh deployment.
+
+```bash
+$ kubectl delete pvc monocle-sample-elastic-data-volume-monocle-sample-elastic-0
+```
+
 
 ## License
 
