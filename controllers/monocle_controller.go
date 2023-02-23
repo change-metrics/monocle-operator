@@ -296,6 +296,9 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Info("Resource fetched successfuly", "name", apiSecretName)
 	}
 
+	apiSecretsVersion := apiSecret.ResourceVersion
+	logger.Info("apiSecret resource", "version", apiSecretsVersion)
+
 	////////////////////////////////////////////////////////
 	//     Handle the Monocle API ConfigMap Instance      //
 	////////////////////////////////////////////////////////
@@ -557,6 +560,9 @@ workspaces:
 		crawlerDeployment.Spec.Template = corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: crawlerMatchLabels,
+				Annotations: map[string]string{
+					"apiSecretsVersion": apiSecretsVersion,
+				},
 			},
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
@@ -565,21 +571,19 @@ workspaces:
 						Name:    resourceName("crawler-pod"),
 						Image:   "quay.io/change-metrics/monocle:1.8.0",
 						Command: []string{"monocle", "crawler"},
+						EnvFrom: []corev1.EnvFromSource{
+							{
+								SecretRef: &corev1.SecretEnvSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: apiSecretName,
+									},
+								},
+							},
+						},
 						Env: []corev1.EnvVar{
 							{
 								Name:  "MONOCLE_PUBLIC_URL",
 								Value: monocleAPIInternalURL,
-							},
-							{
-								Name: "CRAWLERS_API_KEY",
-								ValueFrom: &corev1.EnvVarSource{
-									SecretKeyRef: &corev1.SecretKeySelector{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: apiSecretName,
-										},
-										Key: "CRAWLERS_API_KEY",
-									},
-								},
 							},
 						},
 						Ports: []corev1.ContainerPort{
@@ -637,6 +641,21 @@ workspaces:
 	} else {
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", crawlerDeploymentName)
+
+		// Check pod template label secretsVersion
+		previousSecretsVersion := crawlerDeployment.Spec.Template.Annotations["apiSecretsVersion"]
+		if previousSecretsVersion != apiSecretsVersion {
+			logger.Info("Start a rollout due to secrets update",
+				"name", crawlerDeploymentName,
+				"previous secrets version", previousSecretsVersion,
+				"new secrets version", apiSecretsVersion)
+			crawlerDeployment.Spec.Template.Annotations["apiSecretsVersion"] = apiSecretsVersion
+			err := r.Update(ctx, &crawlerDeployment)
+			if err != nil {
+				logger.Info("Show err", "err", err)
+				reconcileLater(err)
+			}
+		}
 	}
 
 	////////////////////////////////////////////////////////
