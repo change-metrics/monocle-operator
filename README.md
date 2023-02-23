@@ -16,7 +16,7 @@ tasks:
 
 - [X] Elastic / API / Crawler deployment support
 - [X] Validate config ConfigMap update
-- [] Handle secret data update
+- [X] Handle secret data update
 - [] Set Monocle Resource Status
 - [] Produce and publish the operator container image
 - [] Document operator deployment
@@ -91,6 +91,14 @@ $ kubectl edit cm monocle-sample-api
 The Monocle API and Crawler process detect that the config data (exposed via a ConfigMap mounted
 as a volume) changed and automatically handle the change.
 
+Edit the Monocle Secrets (mainly used by the crawler process):
+
+```bash
+$ kubectl edit secret monocle-sample-api
+```
+
+The Monocle controller detects the secret change and force a rollout for the api and crawler
+deployments.
 
 Elastic volume is persistant so you might want to wipe the Elastic data to
 start a fresh deployment.
