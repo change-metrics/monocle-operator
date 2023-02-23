@@ -22,6 +22,7 @@ import (
 	"time"
 
 	monoclev1alpha1 "github.com/change-metrics/monocle-operator/api/v1alpha1"
+	"github.com/go-logr/logr"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +43,19 @@ import (
 type MonocleReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+}
+
+func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, logger logr.Logger, depl appsv1.Deployment, apiSecretsVersion string) error {
+	previousSecretsVersion := depl.Spec.Template.Annotations["apiSecretsVersion"]
+	if previousSecretsVersion != apiSecretsVersion {
+		logger.Info("Start a rollout due to secrets update",
+			"name", depl.Name,
+			"previous secrets version", previousSecretsVersion,
+			"new secrets version", apiSecretsVersion)
+		depl.Spec.Template.Annotations["apiSecretsVersion"] = apiSecretsVersion
+		return r.Update(ctx, &depl)
+	}
+	return nil
 }
 
 //+kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles,verbs=get;list;watch;create;update;patch;delete
@@ -392,6 +406,9 @@ workspaces:
 		apiDeployment.Spec.Template = corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: apiMatchLabels,
+				Annotations: map[string]string{
+					"apiSecretsVersion": apiSecretsVersion,
+				},
 			},
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
@@ -400,6 +417,15 @@ workspaces:
 						Name:    resourceName("api-pod"),
 						Image:   "quay.io/change-metrics/monocle:1.8.0",
 						Command: []string{"monocle", "api"},
+						EnvFrom: []corev1.EnvFromSource{
+							{
+								SecretRef: &corev1.SecretEnvSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: apiSecretName,
+									},
+								},
+							},
+						},
 						Env: []corev1.EnvVar{
 							{
 								Name:  "MONOCLE_ELASTIC_URL",
@@ -408,17 +434,6 @@ workspaces:
 							{
 								Name:  "MONOCLE_PUBLIC_URL",
 								Value: monoclePublicURL,
-							},
-							{
-								Name: "CRAWLERS_API_KEY",
-								ValueFrom: &corev1.EnvVarSource{
-									SecretKeyRef: &corev1.SecretKeySelector{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: apiSecretName,
-										},
-										Key: "CRAWLERS_API_KEY",
-									},
-								},
 							},
 						},
 						Ports: []corev1.ContainerPort{
@@ -475,6 +490,13 @@ workspaces:
 	} else {
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", apiDeploymentName)
+
+		// Check pod template Annotation secretsVersion
+		err := r.rollOutWhenApiSecretsChange(ctx, logger, apiDeployment, apiSecretsVersion)
+		if err != nil {
+			logger.Info("Unable to update deployment annotations", "name", apiDeploymentName)
+			reconcileLater(err)
+		}
 	}
 
 	// Handle service for api
@@ -642,19 +664,11 @@ workspaces:
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", crawlerDeploymentName)
 
-		// Check pod template label secretsVersion
-		previousSecretsVersion := crawlerDeployment.Spec.Template.Annotations["apiSecretsVersion"]
-		if previousSecretsVersion != apiSecretsVersion {
-			logger.Info("Start a rollout due to secrets update",
-				"name", crawlerDeploymentName,
-				"previous secrets version", previousSecretsVersion,
-				"new secrets version", apiSecretsVersion)
-			crawlerDeployment.Spec.Template.Annotations["apiSecretsVersion"] = apiSecretsVersion
-			err := r.Update(ctx, &crawlerDeployment)
-			if err != nil {
-				logger.Info("Show err", "err", err)
-				reconcileLater(err)
-			}
+		// Check pod template Annotation secretsVersion
+		err := r.rollOutWhenApiSecretsChange(ctx, logger, crawlerDeployment, apiSecretsVersion)
+		if err != nil {
+			logger.Info("Unable to update deployment annotations", "name", crawlerDeploymentName)
+			reconcileLater(err)
 		}
 	}
 
