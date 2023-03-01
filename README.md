@@ -63,6 +63,11 @@ and run `nix develop`.
 Assuming is properly configured `~/.kube/config` file simply run:
 
 ```bash
+# Install the CRD
+$ make install
+# Set the WATCH_NAMESPACE env var
+$ export WATCH_NAMESPACE=$(kubectl config view -o jsonpath="{.contexts[?(@.name == '$(kubectl config current-context)')].context.namespace}")
+# Start the manager in dev mode
 $ go run ./main.go
 ```
 
@@ -85,7 +90,7 @@ $ firefox http://localhost:8090
 Edit the Monocle config:
 
 ```bash
-$ kubectl edit cm monocle-sample-api 
+$ kubectl edit cm monocle-sample-api
 ```
 
 The Monocle API and Crawler process detect that the config data (exposed via a ConfigMap mounted
