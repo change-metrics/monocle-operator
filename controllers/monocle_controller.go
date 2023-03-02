@@ -58,6 +58,13 @@ func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, log
 	return nil
 }
 
+func serviceStatusConverter (isReady bool) string {
+	if isReady {
+		return "Ready"
+	}
+	return "In Progress ..."
+}
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
@@ -666,6 +673,22 @@ workspaces:
 			logger.Info("Unable to update deployment annotations", "name", crawlerDeploymentName)
 			reconcileLater(err)
 		}
+	}
+
+	////////////////////////////////////////////////////////
+	//           Setting resources statuses               //
+	////////////////////////////////////////////////////////
+
+	instance.Status = monoclev1alpha1.MonocleStatus{
+		Elastic: serviceStatusConverter(elasticSearchReady()),
+		Api: serviceStatusConverter(isDeploymentReady(apiDeploymentLastCondition())),
+		Crawler: serviceStatusConverter(isDeploymentReady(crawlerDeploymentLastCondition())),
+	}
+
+	status := r.Status()
+	err = status.Update(ctx, &instance)
+	if err != nil {
+		reconcileLater(err)
 	}
 
 	////////////////////////////////////////////////////////
