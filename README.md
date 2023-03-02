@@ -18,6 +18,7 @@ tasks:
 - [X] Validate config ConfigMap update
 - [X] Handle secret data update
 - [X] Set Monocle Resource Status
+- [X] Refresh elastic database in Monocle API Resource when ConfigMap is modified
 - [] Produce and publish the operator container image
 - [] Document operator deployment
 - [] Git config support
@@ -95,6 +96,9 @@ $ kubectl edit cm monocle-sample-api
 
 The Monocle API and Crawler process detect that the config data (exposed via a ConfigMap mounted
 as a volume) changed and automatically handle the change.
+
+The "janitor update-idents" command is run automatically after the Moncole config update.
+The Monocle operator starts a Job "update-idents-job" to handle that task.
 
 Edit the Monocle Secrets (mainly used by the crawler process):
 
