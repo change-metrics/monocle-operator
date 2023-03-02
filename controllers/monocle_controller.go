@@ -58,11 +58,33 @@ func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, log
 	return nil
 }
 
-func serviceStatusConverter (isReady bool) string {
+func serviceStatusConverter(isReady bool) string {
 	if isReady {
 		return "Ready"
 	}
 	return "In Progress ..."
+}
+
+// https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#deployment-status
+func isDeploymentReady(cond appsv1.DeploymentCondition) bool {
+	switch cond.Status {
+	case corev1.ConditionTrue:
+		switch cond.Type {
+		case appsv1.DeploymentAvailable:
+			return true
+		case appsv1.DeploymentProgressing:
+			switch cond.Reason {
+			case "NewReplicaSetAvailable", "FoundNewReplicaSet", "ReplicaSetUpdated":
+				return true
+			default:
+				return false
+			}
+		default:
+			return false
+		}
+	default:
+		return false
+	}
 }
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -381,10 +403,6 @@ workspaces:
 			return appsv1.DeploymentCondition{}
 		}
 	}
-	isDeploymentReady := func(cond appsv1.DeploymentCondition) bool {
-		return cond.Status == corev1.ConditionTrue &&
-			cond.Type == appsv1.DeploymentAvailable
-	}
 
 	// TODO - Handle API restart when this setting is updated
 	monoclePublicURL := "http://localhost:8090"
@@ -681,7 +699,7 @@ workspaces:
 
 	instance.Status = monoclev1alpha1.MonocleStatus{
 		Elastic: serviceStatusConverter(elasticSearchReady()),
-		Api: serviceStatusConverter(isDeploymentReady(apiDeploymentLastCondition())),
+		Api:     serviceStatusConverter(isDeploymentReady(apiDeploymentLastCondition())),
 		Crawler: serviceStatusConverter(isDeploymentReady(crawlerDeploymentLastCondition())),
 	}
 

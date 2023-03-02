@@ -17,7 +17,7 @@ tasks:
 - [X] Elastic / API / Crawler deployment support
 - [X] Validate config ConfigMap update
 - [X] Handle secret data update
-- [x] Set Monocle Resource Status
+- [X] Set Monocle Resource Status
 - [] Produce and publish the operator container image
 - [] Document operator deployment
 - [] Git config support
