@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl_util "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -56,6 +57,84 @@ func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, log
 		return r.Update(ctx, &depl)
 	}
 	return nil
+}
+
+func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance monoclev1alpha1.Monocle, namespace string, logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string) error {
+
+	jobname := "update-idents-job"
+	job := batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobname,
+			Namespace: namespace,
+		},
+	}
+
+	// Checking if there is a Job Resource by Name
+	err := r.Client.Get(ctx,
+		client.ObjectKey{Name: jobname, Namespace: namespace},
+		&job)
+	// Delete it if there is an old job resource
+	fg := metav1.DeletePropagationBackground
+	if err == nil {
+		r.Client.Delete(ctx,
+			&job, &client.DeleteOptions{PropagationPolicy: &fg})
+	}
+
+	// Job Spec Container Adaptation
+	apiConfigMapVolumeName := "api-cm-volume"
+	// Adding the New Container Definition
+	ttlSecondsAfterFinished := int32(3600)
+	// job.ObjectMeta.ResourceVersion = ""
+
+	jobToCreate := batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobname,
+			Namespace: namespace,
+		},
+		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: &ttlSecondsAfterFinished,
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: "Never",
+					Containers: []corev1.Container{
+						{
+							Name:    jobname,
+							Image:   "quay.io/change-metrics/monocle:1.8.0",
+							Command: []string{"bash"},
+							Args:    []string{"-c", " monocle janitor update-idents --elastic ${MONOCLE_ELASTIC_URL} --config /etc/monocle/config.yaml"},
+							Env: []corev1.EnvVar{
+								elasticUrlEnvVar,
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      apiConfigMapVolumeName,
+									ReadOnly:  true,
+									MountPath: "/etc/monocle",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: apiConfigMapVolumeName,
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: apiConfigMapName,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := ctrl_util.SetControllerReference(&instance, &jobToCreate, r.Scheme); err != nil {
+		logger.Info("Unable to set controller reference", "name", jobname)
+	}
+
+	return r.Create(ctx, &jobToCreate)
 }
 
 func serviceStatusConverter(isReady bool) string {
@@ -294,6 +373,11 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		logger.Info("Resource fetched successfuly", "name", elasticServiceName)
 	}
 
+	elasticUrlEnvVar := corev1.EnvVar{
+		Name:  "MONOCLE_ELASTIC_URL",
+		Value: "http://" + elasticServiceName + ":" + strconv.Itoa(elasticPort),
+	}
+
 	////////////////////////////////////////////////////////
 	//       Handle the Monocle API Secret Instance       //
 	////////////////////////////////////////////////////////
@@ -378,6 +462,9 @@ workspaces:
 		logger.Info("Resource fetched successfuly", "name", apiConfigMapName)
 	}
 
+	apiConfigVersion := apiConfigMap.ResourceVersion
+	logger.Info("apiConfig resource", "version", apiConfigVersion)
+
 	////////////////////////////////////////////////////////
 	//     Handle the Monocle API Deployment instance     //
 	////////////////////////////////////////////////////////
@@ -423,6 +510,11 @@ workspaces:
 		// TODO - Set the strategy
 		// Set replicas count
 		apiDeployment.Spec.Replicas = &apiReplicasCount
+		// Set the Deployment annotations
+		apiDeployment.Annotations = map[string]string{
+			"apiConfigVersion": apiConfigVersion,
+		}
+
 		// Set the Deployment pod template
 		apiDeployment.Spec.Template = corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
@@ -448,10 +540,7 @@ workspaces:
 							},
 						},
 						Env: []corev1.EnvVar{
-							{
-								Name:  "MONOCLE_ELASTIC_URL",
-								Value: "http://" + elasticServiceName + ":" + strconv.Itoa(elasticPort),
-							},
+							elasticUrlEnvVar,
 							{
 								Name:  "MONOCLE_PUBLIC_URL",
 								Value: monoclePublicURL,
@@ -515,8 +604,30 @@ workspaces:
 		// Check pod template Annotation secretsVersion
 		err := r.rollOutWhenApiSecretsChange(ctx, logger, apiDeployment, apiSecretsVersion)
 		if err != nil {
-			logger.Info("Unable to update deployment annotations", "name", apiDeploymentName)
+			logger.Info("Unable to update spec deployment annotations", "name", apiDeploymentName)
 			reconcileLater(err)
+		}
+
+		// Check if Deployment Pod Annotation for ConfigMap resource version was updated
+		previousVersion := apiDeployment.Annotations["apiConfigVersion"]
+		if previousVersion != apiConfigVersion {
+
+			logger.Info("Start the update-idents jobs because of api configMap update",
+				"name", apiDeployment.Name,
+				"previous configmap version", previousVersion,
+				"new configmap version", apiConfigVersion)
+			apiDeployment.Annotations["apiConfigVersion"] = apiConfigVersion
+			// Update Deployment Resource to set the new configMap resource version
+			err := r.Update(ctx, &apiDeployment)
+			if err != nil {
+				return reconcileLater(err)
+			}
+			// Trigger the job
+			err = triggerUpdateIdentsJob(r, ctx, instance, req.Namespace, logger, elasticUrlEnvVar, apiConfigMapName)
+			if err != nil {
+				logger.Info("Unable to trigger update-idents", "name", err)
+				reconcileLater(err)
+			}
 		}
 	}
 
