@@ -6,24 +6,15 @@ metadata:
   name: controller-manager
 rules:
 - apiGroups:
-  - ""
+  - apps
+  - monocle.monocle.change-metrics.io
+  - v1
   resources:
   - deployments
-  - secret
-  - service
-  - statefulset
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - '*'
-  resources:
-  - '*'
+  - monocles
+  - secrets
+  - services
+  - statefulsets
   verbs:
   - create
   - delete
