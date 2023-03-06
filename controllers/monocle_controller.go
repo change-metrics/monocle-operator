@@ -40,6 +40,9 @@ import (
 	"github.com/thanhpk/randstr"
 )
 
+//+kubebuilder:rbac:groups="",resources=deployments;secret;statefulset;service,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="*",resources="*",verbs=get;list;watch;create;update;patch;delete
+
 // MonocleReconciler reconciles a Monocle object
 type MonocleReconciler struct {
 	client.Client
