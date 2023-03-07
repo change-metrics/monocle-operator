@@ -1,9 +1,9 @@
 # permissions to do leader election.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   labels:
-    app.kubernetes.io/name: role
+    app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: leader-election-role
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: monocle-operator
@@ -15,6 +15,8 @@ rules:
   - ""
   resources:
   - configmaps
+  - secrets
+  - services
   verbs:
   - get
   - list

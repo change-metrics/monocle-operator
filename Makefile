@@ -29,7 +29,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # monocle.change-metrics.io/monocle-operator-bundle:$VERSION and monocle.change-metrics.io/monocle-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= monocle.change-metrics.io/monocle-operator
+IMAGE_TAG_BASE ?= quay.io/change-metrics/monocle-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -47,7 +47,7 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 endif
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= quay.io/change-metrics/monocle-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.25.0
 
@@ -121,6 +121,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: container-build
 container-build: test ## Build docker image with the manager.
 	podman build -t ${IMG} .
+
+.PHONY: container-push
+container-push: ## Push docker image with the manager.
+	podman push ${IMG}
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -209,9 +213,17 @@ bundle: manifests kustomize ## Generate bundle manifests and metadata, then vali
 bundle-build: ## Build the bundle image.
 	docker build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
+.PHONY: bundle-container-build
+bundle-container-build: ## Build the bundle image.
+	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: bundle-container-push
+bundle-container-push: ## Push the bundle image.
+	$(MAKE) container-push IMG=$(BUNDLE_IMG)
 
 .PHONY: opm
 OPM = ./bin/opm

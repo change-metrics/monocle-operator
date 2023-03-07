@@ -40,6 +40,9 @@ import (
 	"github.com/thanhpk/randstr"
 )
 
+// The order of groups metters. apps -> v1 -> monocle.monocle.change-metrics.io
+//+kubebuilder:rbac:groups=apps;v1;monocle.monocle.change-metrics.io,resources=monocles;deployments;secrets;statefulsets;services,verbs=get;list;watch;create;update;patch;delete
+
 // MonocleReconciler reconciles a Monocle object
 type MonocleReconciler struct {
 	client.Client
