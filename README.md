@@ -25,7 +25,7 @@ After successful CRD installation, install the Monocle Operator deployment by ru
 kubectl create -f https://github.com/change-metrics/monocle-operator/blob/master/config/samples/monocle_v1alpha1_monocle-alt.yaml
 ```
 
-### Day 1 - Basic Install
+### Phase 1 - Basic Install
 
 Automatic application provisioning and config management
 
@@ -40,27 +40,25 @@ tasks:
 - [] Document operator deployment
 
 
-### Day 2 - Seamless Upgrades
+### Phase 2 - Seamless Upgrades
 
 Support minor version upgrade
 
 tasks: TBD
 
-### Day 3 - Full lifecycle
+### Phase 3 - Full lifecycle
 
 Application and storage lifecycle (backup and failure recovery)
 
 tasks: TBD
 
-### Day 4 - Deep insights
+### Phase 4 - Deep insights
 
 Metrics, alerts, log processing
 
 tasks: TBD
 
-### Day 5 - Auto-pilot
-
-Metrics, alerts, log processing
+### Phase 5 - Auto-pilot
 
 tasks: TBD
 
