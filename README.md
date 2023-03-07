@@ -8,7 +8,32 @@ The operator is currently in alpha version and should not be used in production.
 
 The status is: Work In Progress.
 
-### Day 1 - Basic Install
+## Installation
+
+### Vanilla installation
+
+To install the operator on a vanilla Kubernetes cluster,
+
+first, you first need to install the Monocle CRDs:
+
+```
+kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-operator/master/config/crd/bases/monocle.monocle.change-metrics.io_monocles.yaml
+```
+
+then deploy the operator:
+
+kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-operator/master/install/operator.yml
+```
+
+finally, reclaim a Monocle instance by running the following command:
+
+```
+kubectl create -f https://github.com/change-metrics/monocle-operator/blob/master/config/samples/monocle_v1alpha1_monocle-alt.yaml
+```
+
+## Status
+
+### Phase 1 - Basic Install
 
 Automatic application provisioning and config management
 
@@ -21,44 +46,27 @@ tasks:
 - [X] Refresh elastic database in Monocle API Resource when ConfigMap is modified
 - [] Produce and publish the operator container image
 - [] Document operator deployment
-- [] Git config support
-- Far more task TBD
-
-Vanilla installation
-
-To install the operator on a vanilla Kubernetes cluster, you first need to install its CRDs by running the following commands:
-```
-kubectl create -f https://github.com/change-metrics/monocle-operator/monocle-k8s-resources/0.1/monocle-crd.yml
-kubectl create -f https://github.com/change-metrics/monocle-operator/monocle-k8s-resources/0.1/monocle-resources.yml
-```
-
-After successful CRD installation, install the Monocle Operator deployment by running the following command:
-```
-kubectl create -f https://github.com/change-metrics/monocle-operator/blob/master/config/samples/monocle_v1alpha1_monocle-alt.yaml
-```
 
 
-### Day 2 - Seamless Upgrades
+### Phase 2 - Seamless Upgrades
 
 Support minor version upgrade
 
 tasks: TBD
 
-### Day 3 - Full lifecycle
+### Phase 3 - Full lifecycle
 
 Application and storage lifecycle (backup and failure recovery)
 
 tasks: TBD
 
-### Day 4 - Deep insights
+### Phase 4 - Deep insights
 
 Metrics, alerts, log processing
 
 tasks: TBD
 
-### Day 5 - Auto-pilot
-
-Metrics, alerts, log processing
+### Phase 5 - Auto-pilot
 
 tasks: TBD
 
@@ -129,7 +137,6 @@ start a fresh deployment.
 ```bash
 $ kubectl delete pvc monocle-sample-elastic-data-volume-monocle-sample-elastic-0
 ```
-
 
 ## License
 
