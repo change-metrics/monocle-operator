@@ -22,6 +22,7 @@ kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-opera
 
 then deploy the operator:
 
+```
 kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-operator/master/install/operator.yml
 ```
 
