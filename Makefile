@@ -153,6 +153,10 @@ ifndef ignore-not-found
   ignore-not-found = false
 endif
 
+.PHONY: gen-operator-install
+gen-operator-install: manifests kustomize
+	$(KUSTOMIZE) build config/default > install/operator.yml
+
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
