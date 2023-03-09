@@ -1,90 +1,88 @@
 package controllers
 
 import (
-	"context"
+	"fmt"
 	"os/exec"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	utils ".test/utils"
-
-	monoclev1alpha1 "github.com/change-metrics/monocle-operator/api/v1alpha1"
-
-	//"github.com/change-metrics/monocle-operator/test/utils"
-	corev1 "k8s.io/api/core/v1"
 )
 
+const monocleCRDUrl = "https://raw.githubusercontent.com/change-metrics/monocle-operator/master/config/crd/bases/monocle.monocle.change-metrics.io_monocles.yaml"
+
+const monocleOperatorUrl = "https://raw.githubusercontent.com/change-metrics/monocle-operator/master/install/operator.yml"
+
+const monocleManifestUrl = "https://raw.githubusercontent.com/change-metrics/monocle-operator/master/config/samples/monocle_v1alpha1_monocle-alt.yaml"
+
+func ExecuteCmd(command ...string) ([]byte, error) {
+	// Command to be executed
+	args := command[1:]
+	cmd := exec.Command(command[0], args...)
+
+	// Executing Command
+	stdoutanderr, err := cmd.CombinedOutput()
+	if err != nil {
+		return stdoutanderr, fmt.Errorf("%s failed with error: (%v) %s", strings.Join(cmd.Args, " "), err, string(stdoutanderr))
+	}
+	return stdoutanderr, err
+}
+
+func CreateMonocleOperator() ([]byte, error) {
+	return ExecuteCmd("kubectl", "create", "-f", monocleOperatorUrl)
+}
+
+func DeleteMonocleOperator() ([]byte, error) {
+	return ExecuteCmd("kubectl", "delete", "-f", monocleOperatorUrl)
+}
+
+func CreateMonocleCRD() ([]byte, error) {
+	return ExecuteCmd("kubectl", "create", "-f", monocleCRDUrl)
+}
+
+func DeleteMonocleCRD() ([]byte, error) {
+	return ExecuteCmd("kubectl", "delete", "-f", monocleCRDUrl)
+}
+
+func CreateMonocleInstance() ([]byte, error) {
+	return ExecuteCmd("kubectl", "create", "-f", monocleManifestUrl)
+}
+
+func DeleteMonocleInstance() ([]byte, error) {
+	return ExecuteCmd("kubectl", "delete", "-f", monocleManifestUrl)
+}
+
+func CreateNameSpace(namespace string) ([]byte, error) {
+	return ExecuteCmd("kubectl", "create", "namespace", namespace)
+}
+
+func DeleteNameSpace(namespace string) ([]byte, error) {
+	return ExecuteCmd("kubectl", "delete", "namespace", namespace)
+}
 
 var _ = Describe("MonocleController", func() {
 
-	monocleResourceName := "monocle-sample"
-	monocleNameSpaceName := "monocle-sample-ns"
-
 	Context("Testing CRD Deployment", func() {
 
-		var monocle *monoclev1alpha1.Monocle
-		var monocle_ns *corev1.Namespace
-		// var monocle_sa *corev1.ServiceAccount
-
-		ctx := context.Background()
 		BeforeEach(func() {
-			By("Creating Namespace")
-			Expect(utils.CreateNameSapce(monocleNameSpaceName)).To(Succeed())
-			By("Creating Monocle CRD")
-			Expect(utils.InstallMonocleOperator()).To(Succeed())
 
-			// monocle_sa = &corev1.ServiceAccount{
-			// 	ObjectMeta: metav1.ObjectMeta{
-			// 		Name:      "monocle-operator-controller-manager",
-			// 		Namespace: monocleNameSpaceName,
-			// 		Labels: map[string]string{
-			// 			"app.kubernetes.io/component":  "rbac",
-			// 			"app.kubernetes.io/created-by": "monocle-operator",
-			// 			"app.kubernetes.io/instance":   "controller-manager",
-			// 			"app.kubernetes.io/managed-by": "kustomize",
-			// 			"app.kubernetes.io/name":       "serviceaccount",
-			// 			"app.kubernetes.io/part-of":    "monocle-operator",
-			// 		},
-			// 	},
-			// }
 		})
 
-		It("Should Create a Monocle Namespace", func() {
+		AfterEach(func() {
+
+		})
+
+		It("Should Create Monocle Instance", func() {
 			By("Calling the K8s Client")
-			Expect(k8sClient.Create(ctx, monocle_ns)).Should(Succeed())
+			_, err := CreateMonocleInstance()
+			Expect(err).To(Succeed())
 		})
 
-		// It("Should Create a Service Account", func() {
-		// 	By("Calling the K8s Client")
-		// 	Expect(k8sClient.Create(ctx, monocle_sa)).Should(Succeed())
-		// })
-
-		It("Should Create a Monocle Deployment", func() {
+		It("Should Delete Monocle Instance", func() {
 			By("Calling the K8s Client")
-			cmd := exec.Command("kubectl", "apply", "-f", "https://raw.githubusercontent.com/change-metrics/monocle-operator/master/config/crd/bases/monocle.monocle.change-metrics.io_monocles.yaml")
-			//cmd.Run()
-			Run(cmd)
-			cmd = exec.Command("kubectl", "apply", "-f", "https://raw.githubusercontent.com/change-metrics/monocle-operator/master/install/operator.yml")
-			//cmd.Run()
-			Run(cmd)
-			Expect(k8sClient.Create(ctx, monocle)).Should(Succeed())
+			_, err := DeleteMonocleInstance()
+			Expect(err).To(Succeed())
 		})
-
-		// It("Should Remove a Monocle Deployment", func() {
-		// 	By("Calling the K8s Client")
-		// 	Expect(k8sClient.Delete(ctx, monocle)).Should(Succeed())
-		// })
-
-		// It("Should Remove a Service Account", func() {
-		// 	By("Calling the K8s Client")
-		// 	Expect(k8sClient.Delete(ctx, monocle_sa)).Should(Succeed())
-		// })
-
-		// It("Should Remove a Monocle Namespace", func() {
-		// 	By("Calling the K8s Client")
-		// 	Expect(k8sClient.Delete(ctx, monocle_ns)).Should(Succeed())
-		// })
 
 	})
 

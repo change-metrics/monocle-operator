@@ -57,9 +57,6 @@ func TestAPIs(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	//Expect(os.Setenv("USE_EXISTING_CLUSTER", "true")).To(Succeed())
-	//Expect(os.Setenv("TEST_ASSET_KUBECTL", "/usr/bin/kubectl")).To(Succeed())
-
 	// Set to true or Uncomment the line below to get more output, useful for debugging
 	Expect(os.Setenv("KUBEBUILDER_ATTACH_CONTROL_PLANE_OUTPUT", "true")).To(Succeed())
 
