@@ -344,5 +344,7 @@ spec:
             - ALL
       securityContext:
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: monocle-operator-controller-manager
       terminationGracePeriodSeconds: 10
