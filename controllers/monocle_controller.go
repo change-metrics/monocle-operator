@@ -41,7 +41,21 @@ import (
 )
 
 // The order of groups metters. apps -> v1 -> monocle.monocle.change-metrics.io
-//+kubebuilder:rbac:groups=apps;v1;monocle.monocle.change-metrics.io,resources=monocles;deployments;secrets;statefulsets;services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles/finalizers,verbs=update
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get
+// +kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=v1,resources=services/status,verbs=get
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get
+// +kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=v1,resources=configmaps/status,verbs=get
+// +kubebuilder:rbac:groups=v1,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=v1,resources=secrets/status,verbs=get
 
 // MonocleReconciler reconciles a Monocle object
 type MonocleReconciler struct {

@@ -7,13 +7,25 @@ metadata:
 rules:
 - apiGroups:
   - apps
-  - monocle.monocle.change-metrics.io
-  - v1
   resources:
   - deployments
-  - monocles
-  - secrets
-  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments/status
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  resources:
   - statefulsets
   verbs:
   - create
@@ -23,3 +35,107 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets/status
+  verbs:
+  - get
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs/status
+  verbs:
+  - get
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - monocle.monocle.change-metrics.io
+  resources:
+  - monocles/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - v1
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - v1
+  resources:
+  - configmaps/status
+  verbs:
+  - get
+- apiGroups:
+  - v1
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - v1
+  resources:
+  - secrets/status
+  verbs:
+  - get
+- apiGroups:
+  - v1
+  resources:
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - v1
+  resources:
+  - services/status
+  verbs:
+  - get
