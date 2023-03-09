@@ -14,19 +14,11 @@ The status is: Work In Progress.
 
 To install the operator on a vanilla Kubernetes cluster,
 
-first, you first need to install the Monocle CRDs:
-
-```
-kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-operator/master/config/crd/bases/monocle.monocle.change-metrics.io_monocles.yaml
-```
-
-then deploy the operator:
-
 ```
 kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-operator/master/install/operator.yml
 ```
 
-finally, reclaim a Monocle instance by running the following command:
+Then, reclaim a Monocle instance by running the following command:
 
 ```
 kubectl create -f https://github.com/change-metrics/monocle-operator/blob/master/config/samples/monocle_v1alpha1_monocle-alt.yaml
