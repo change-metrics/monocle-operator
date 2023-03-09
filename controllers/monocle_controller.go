@@ -41,25 +41,26 @@ import (
 )
 
 // The order of groups metters. apps -> v1 -> monocle.monocle.change-metrics.io
-//+kubebuilder:rbac:groups=apps;v1;monocle.monocle.change-metrics.io,resources=monocles;deployments;secrets;statefulsets;services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=monocle.monocle.change-metrics.io,resources=monocles/finalizers,verbs=update
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs/status,verbs=get
+// +kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=v1,resources=services/status,verbs=get
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get
+// +kubebuilder:rbac:groups=v1,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=v1,resources=configmaps/status,verbs=get
+// +kubebuilder:rbac:groups=v1,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=v1,resources=secrets/status,verbs=get
 
 // MonocleReconciler reconciles a Monocle object
 type MonocleReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
-}
-
-func getSecurityContext() corev1.SecurityContext {
-	runAsNonRoot := true
-	allowPrivilegeEscalation := false
-	sec := corev1.SecurityContext{
-		RunAsNonRoot:             &runAsNonRoot,
-		AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-		SeccompProfile: &corev1.SeccompProfile{
-			Type: "RuntimeDefault",
-		},
-	}
-	return sec
 }
 
 func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, logger logr.Logger, depl appsv1.Deployment, apiSecretsVersion string) error {
@@ -100,7 +101,6 @@ func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance 
 	apiConfigMapVolumeName := "api-cm-volume"
 	// Adding the New Container Definition
 	ttlSecondsAfterFinished := int32(3600)
-	secContext := getSecurityContext()
 
 	jobToCreate := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -114,11 +114,10 @@ func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance 
 					RestartPolicy: "Never",
 					Containers: []corev1.Container{
 						{
-							Name:            jobname,
-							Image:           "quay.io/change-metrics/monocle:1.8.0",
-							SecurityContext: &secContext,
-							Command:         []string{"bash"},
-							Args:            []string{"-c", " monocle janitor update-idents --elastic ${MONOCLE_ELASTIC_URL} --config /etc/monocle/config.yaml"},
+							Name:    jobname,
+							Image:   "quay.io/change-metrics/monocle:1.8.0",
+							Command: []string{"bash"},
+							Args:    []string{"-c", " monocle janitor update-idents --elastic ${MONOCLE_ELASTIC_URL} --config /etc/monocle/config.yaml"},
 							Env: []corev1.EnvVar{
 								elasticUrlEnvVar,
 							},
@@ -291,7 +290,6 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	elasticPVCStorageQuantity := resource.NewQuantity(1*1000*1000*1000, resource.DecimalSI)
 
 	elasticUserId := int64(1000)
-	elasticSecContext := getSecurityContext()
 
 	elasticSearchReady := func() bool {
 		return elasticReplicasCount == elasticStatefulSet.Status.ReadyReplicas
@@ -337,12 +335,14 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					RunAsUser:  &elasticUserId,
 					RunAsGroup: &elasticUserId,
 					FSGroup:    &elasticUserId,
+					SeccompProfile: &corev1.SeccompProfile{
+						Type: "RuntimeDefault",
+					},
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            resourceName("elastic-pod"),
-						SecurityContext: &elasticSecContext,
-						Image:           "docker.elastic.co/elasticsearch/elasticsearch:7.17.5",
+						Name:  resourceName("elastic-pod"),
+						Image: "docker.elastic.co/elasticsearch/elasticsearch:7.17.5",
 						Env: []corev1.EnvVar{
 							{
 								Name:  "ES_JAVA_OPTS",
@@ -545,9 +545,7 @@ workspaces:
 	}
 	apiReplicasCount := int32(1)
 
-	apiSecContext := getSecurityContext()
 	apiUserId := int64(1000)
-	apiSecContext.RunAsUser = &apiUserId
 
 	// Func to get the last condition of the Monocle API Deployment instance
 	apiDeploymentLastCondition := func() appsv1.DeploymentCondition {
@@ -591,12 +589,19 @@ workspaces:
 			},
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsUser:  &apiUserId,
+					RunAsGroup: &apiUserId,
+					FSGroup:    &apiUserId,
+					SeccompProfile: &corev1.SeccompProfile{
+						Type: "RuntimeDefault",
+					},
+				},
 				Containers: []corev1.Container{
 					{
-						Name:            resourceName("api-pod"),
-						SecurityContext: &apiSecContext,
-						Image:           "quay.io/change-metrics/monocle:1.8.0",
-						Command:         []string{"monocle", "api"},
+						Name:    resourceName("api-pod"),
+						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Command: []string{"monocle", "api"},
 						EnvFrom: []corev1.EnvFromSource{
 							{
 								SecretRef: &corev1.SecretEnvSource{
@@ -727,9 +732,7 @@ workspaces:
 		}
 	}
 
-	crawlerSecContext := getSecurityContext()
 	crawlerUserId := int64(1000)
-	crawlerSecContext.RunAsUser = &crawlerUserId
 
 	err = r.Client.Get(
 		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: req.Namespace}, &crawlerDeployment)
@@ -753,12 +756,19 @@ workspaces:
 			},
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsUser:  &crawlerUserId,
+					RunAsGroup: &crawlerUserId,
+					FSGroup:    &crawlerUserId,
+					SeccompProfile: &corev1.SeccompProfile{
+						Type: "RuntimeDefault",
+					},
+				},
 				Containers: []corev1.Container{
 					{
-						Name:            resourceName("crawler-pod"),
-						SecurityContext: &crawlerSecContext,
-						Image:           "quay.io/change-metrics/monocle:1.8.0",
-						Command:         []string{"monocle", "crawler"},
+						Name:    resourceName("crawler-pod"),
+						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Command: []string{"monocle", "crawler"},
 						EnvFrom: []corev1.EnvFromSource{
 							{
 								SecretRef: &corev1.SecretEnvSource{
