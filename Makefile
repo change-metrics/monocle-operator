@@ -157,10 +157,12 @@ ifndef ignore-not-found
   ignore-not-found = false
 endif
 
+# Generate the install/operator.yml and install/crds.yml
 .PHONY: gen-operator-install
 gen-operator-install: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > install/operator.yml
+	$(KUSTOMIZE) build config/operator > install/operator.yml
+	$(KUSTOMIZE) build config/crd > install/crds.yml
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
