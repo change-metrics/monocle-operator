@@ -51,6 +51,10 @@ IMG ?= quay.io/change-metrics/monocle-operator:v$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.25.0
 
+# The next variable is defined to test the operator with envtest go library. It is a known issue.
+# More: https://book.kubebuilder.io/reference/envtest.html#kubernetes-120-and-121-binary-issues
+ENVTEST_K8S_VERSION_WORKING_VERSION = 1.19.2
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -101,9 +105,25 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+## USE_EXISTING_CLUSTER="true" KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./controllers -v -ginkgo.v
+
+TESTDIRS := $(shell go list ./... | grep -v /test/)
+
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION_WORKING_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(TESTDIRS) -coverprofile cover.out
+
+.PHONY: test_existing_cluster
+test_w_existing_cluster: manifests generate fmt vet envtest ## Run tests.
+	USE_EXISTING_CLUSTER="true" KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(TESTDIRS) -coverprofile cover.out
+
+.PHONY: test_w_ginkgo
+test_w_ginkgo: manifests generate fmt vet envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION_WORKING_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(TESTDIRS) -v -ginkgo.v
+
+.PHONY: test_w_ginkgo_and_existing_cluster
+test_w_ginkgo_and_existing_cluster: manifests generate fmt vet envtest
+	USE_EXISTING_CLUSTER="true" KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(TESTDIRS) -v -ginkgo.v
 
 ##@ Build
 
