@@ -44,8 +44,8 @@ tasks:
 - [X] Handle secret data update
 - [X] Set Monocle Resource Status
 - [X] Refresh elastic database in Monocle API Resource when ConfigMap is modified
-- [] Produce and publish the operator container image
-- [] Document operator deployment
+- [X] Produce and publish the operator container image
+- [X] Document operator deployment
 
 
 ### Phase 2 - Seamless Upgrades
