@@ -159,6 +159,7 @@ endif
 
 .PHONY: gen-operator-install
 gen-operator-install: manifests kustomize
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > install/operator.yml
 
 .PHONY: install
