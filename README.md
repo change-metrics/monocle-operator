@@ -12,6 +12,9 @@ The status is: Work In Progress.
 
 ### Vanilla installation
 
+By default the Monocle operator watches all namespaces, but can be scoped to a specified namespace via the
+`WATCH_NAMESPACE` environment variable.
+
 To install the CRDs and the operator:
 
 ```
@@ -24,6 +27,9 @@ finally, reclaim a Monocle instance by running the following command:
 ```
 kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-operator/master/config/samples/monocle_v1alpha1_monocle-alt.yaml
 ```
+
+The role `monocle-operator-monocle-editor-role` is installed by the `operator.yml`. This role can be assigned via
+a `RoleBinding` to users.
 
 ## Status
 
