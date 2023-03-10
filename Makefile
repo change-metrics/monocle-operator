@@ -122,6 +122,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 container-build: test ## Build docker image with the manager.
 	podman build -t ${IMG} .
 
+.PHONY: docker-build
+docker-build: test ## Build docker image with the manager.
+	docker build -t ${IMG} .
+
 .PHONY: container-push
 container-push: ## Push docker image with the manager.
 	podman push ${IMG}
