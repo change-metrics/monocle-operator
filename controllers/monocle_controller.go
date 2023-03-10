@@ -195,7 +195,9 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			ctrl.Result, error) {
 			return ctrl.Result{}, nil
 		}
-		instance = monoclev1alpha1.Monocle{}
+		instance                 = monoclev1alpha1.Monocle{}
+		runAsNonRoot             = true
+		allowPrivilegeEscalation = false
 	)
 
 	logger.Info("Enter Reconcile ...")
@@ -289,8 +291,6 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// TODO How to handle this ? Should it be expose via the CRD ?
 	elasticPVCStorageQuantity := resource.NewQuantity(1*1000*1000*1000, resource.DecimalSI)
 
-	elasticUserId := int64(1000)
-
 	elasticSearchReady := func() bool {
 		return elasticReplicasCount == elasticStatefulSet.Status.ReadyReplicas
 	}
@@ -332,9 +332,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
 				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser:  &elasticUserId,
-					RunAsGroup: &elasticUserId,
-					FSGroup:    &elasticUserId,
+					RunAsNonRoot: &runAsNonRoot,
 					SeccompProfile: &corev1.SeccompProfile{
 						Type: "RuntimeDefault",
 					},
@@ -343,6 +341,14 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					{
 						Name:  resourceName("elastic-pod"),
 						Image: "docker.elastic.co/elasticsearch/elasticsearch:7.17.5",
+						SecurityContext: &corev1.SecurityContext{
+							AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{
+									"ALL",
+								},
+							},
+						},
 						Env: []corev1.EnvVar{
 							{
 								Name:  "ES_JAVA_OPTS",
@@ -545,8 +551,6 @@ workspaces:
 	}
 	apiReplicasCount := int32(1)
 
-	apiUserId := int64(1000)
-
 	// Func to get the last condition of the Monocle API Deployment instance
 	apiDeploymentLastCondition := func() appsv1.DeploymentCondition {
 		if len(apiDeployment.Status.Conditions) > 0 {
@@ -590,16 +594,22 @@ workspaces:
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
 				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser:  &apiUserId,
-					RunAsGroup: &apiUserId,
-					FSGroup:    &apiUserId,
+					RunAsNonRoot: &runAsNonRoot,
 					SeccompProfile: &corev1.SeccompProfile{
 						Type: "RuntimeDefault",
 					},
 				},
 				Containers: []corev1.Container{
 					{
-						Name:    resourceName("api-pod"),
+						Name: resourceName("api-pod"),
+						SecurityContext: &corev1.SecurityContext{
+							AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{
+									"ALL",
+								},
+							},
+						},
 						Image:   "quay.io/change-metrics/monocle:1.8.0",
 						Command: []string{"monocle", "api"},
 						EnvFrom: []corev1.EnvFromSource{
@@ -732,8 +742,6 @@ workspaces:
 		}
 	}
 
-	crawlerUserId := int64(1000)
-
 	err = r.Client.Get(
 		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: req.Namespace}, &crawlerDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
@@ -757,16 +765,22 @@ workspaces:
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyAlways,
 				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser:  &crawlerUserId,
-					RunAsGroup: &crawlerUserId,
-					FSGroup:    &crawlerUserId,
+					RunAsNonRoot: &runAsNonRoot,
 					SeccompProfile: &corev1.SeccompProfile{
 						Type: "RuntimeDefault",
 					},
 				},
 				Containers: []corev1.Container{
 					{
-						Name:    resourceName("crawler-pod"),
+						Name: resourceName("crawler-pod"),
+						SecurityContext: &corev1.SecurityContext{
+							AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{
+									"ALL",
+								},
+							},
+						},
 						Image:   "quay.io/change-metrics/monocle:1.8.0",
 						Command: []string{"monocle", "crawler"},
 						EnvFrom: []corev1.EnvFromSource{
