@@ -30,9 +30,10 @@ spec:
           spec:
             description: MonocleSpec defines the desired state of Monocle
             properties:
-              monoclePublicURL:
-                default: https://localhost:8090
+              monoclePublicFQDN:
                 type: string
+            required:
+            - monoclePublicFQDN
             type: object
           status:
             description: MonocleStatus defines the observed state of Monocle

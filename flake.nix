@@ -15,6 +15,7 @@
           pkgs.go
           # 0.10.1 in nixpkgs 22.11
           pkgs.gopls
+          pkgs.k9s
         ];
         shellHook = ''
           echo "Welcome in $name"

@@ -22,8 +22,7 @@ import (
 
 // MonocleSpec defines the desired state of Monocle
 type MonocleSpec struct {
-	//+kubebuilder:default:="https://localhost:8090"
-	MonoclePublicURL string `json:"monoclePublicURL,omitempty"`
+	MonoclePublicFQDN string `json:"monoclePublicFQDN"`
 }
 
 // MonocleStatus defines the observed state of Monocle
