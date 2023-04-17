@@ -1,12 +1,19 @@
 # monocle-operator
 
-A k8s operator for [Monocle](https://github.com/change-metrics/monocle).
+A k8s/OpenShift operator for [Monocle](https://github.com/change-metrics/monocle).
 
-## Description
+## Status
 
 The operator is currently in alpha version and should not be used in production.
 
 The status is: Work In Progress.
+
+We use [Microshift](https://github.com/openshift/microshift) as development sandbox.
+
+Thus the operator might have some adherences to OpenShift regarding:
+
+- The Security Context Contraints
+- The HTTPS ingress
 
 ## Installation
 
@@ -97,17 +104,19 @@ $ go run ./main.go
 In another terminal apply the Custom Resource:
 
 ```bash
+$ cp config/samples/monocle_v1alpha1_monocle-alt.yaml monocle-sample.yaml
+# Update the monoclePublicFQDN to a FQDN to contact the deployment
+# You might need to update the /etc/hosts
 $ kubectl apply -f config/samples/monocle_v1alpha1_monocle-alt.yaml
 # The reconcile loop should stop shortly and you should see in
 # the other terminal:
 # 1.676629527659292e+09   INFO    monocle operand reconcile terminated
 ```
 
-Setup a port forward to access the Monocle Web UI:
+Access the Monocle Web UI:
 
 ```bash
-$ kubectl port-forward service/monocle-sample-api 8090:8080
-$ firefox http://localhost:8090
+$ firefox https://<FQDN>
 ```
 
 Edit the Monocle config:

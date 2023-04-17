@@ -33,6 +33,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl_util "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -560,10 +561,7 @@ workspaces:
 		}
 	}
 
-	monoclePublicURL := "http://localhost:8090"
-	if instance.Spec.MonoclePublicURL != "" {
-		monoclePublicURL = instance.Spec.MonoclePublicURL
-	}
+	monoclePublicURL := "https://" + instance.Spec.MonoclePublicFQDN
 	logger.Info("Monocle public URL set to", "url", monoclePublicURL)
 
 	err = r.Client.Get(
@@ -712,6 +710,68 @@ workspaces:
 				reconcileLater(err)
 			}
 		}
+	}
+
+	// Handle ingress for api //
+	////////////////////////////
+
+	var apiIngressName = resourceName("api-ingress")
+	var apiIngress netv1.Ingress
+	var annotations = make(map[string]string)
+	annotations["route.openshift.io/termination"] = "edge"
+	apiIngress = netv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        apiIngressName,
+			Namespace:   req.Namespace,
+			Annotations: annotations,
+		},
+	}
+
+	err = r.Client.Get(
+		ctx, client.ObjectKey{Name: apiIngressName, Namespace: req.Namespace}, &apiIngress)
+	if err != nil && k8s_errors.IsNotFound(err) {
+		pt := netv1.PathTypePrefix
+		apiIngress.Spec = netv1.IngressSpec{
+			Rules: []netv1.IngressRule{
+				{
+					Host: instance.Spec.MonoclePublicFQDN,
+					IngressRuleValue: netv1.IngressRuleValue{
+						HTTP: &netv1.HTTPIngressRuleValue{
+							Paths: []netv1.HTTPIngressPath{
+								{
+									PathType: &pt,
+									Path:     "/",
+									Backend: netv1.IngressBackend{
+										Service: &netv1.IngressServiceBackend{
+											Name: apiSecretName,
+											Port: netv1.ServiceBackendPort{
+												Number: int32(apiPort),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		if err := ctrl_util.SetControllerReference(&instance, &apiIngress, r.Scheme); err != nil {
+			logger.Info("Unable to set controller reference", "name", apiIngressName)
+			return reconcileLater(err)
+		}
+		logger.Info("Creating Ingress", "name", apiIngressName)
+		if err := r.Create(ctx, &apiIngress); err != nil {
+			logger.Info("Unable to create ingress", "name", apiIngress)
+			return reconcileLater(err)
+		}
+	} else if err != nil {
+		// Handle the unexpected err
+		logger.Info("Unable to get resource", "name", apiIngressName)
+		return reconcileLater(err)
+	} else {
+		// Eventually handle resource update
+		logger.Info("Resource fetched successfuly", "name", apiIngressName)
 	}
 
 	////////////////////////////////////////////////////////
