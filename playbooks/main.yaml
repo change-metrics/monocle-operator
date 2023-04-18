@@ -1,4 +1,8 @@
 - hosts: "{{ hostname | default('all') }}"
-  tasks:
-    - debug:
-        msg: "In main"
+  roles:
+    # Install deps, build and install the CRD
+    - install-operator
+    # Run the Monocle operator
+    - run-operator
+    # Claim a Monocle instance
+    - claim-instance

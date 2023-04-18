@@ -1,0 +1,14 @@
+- name: Deploy monocle-sample instance
+  shell: |
+    kubectl apply -f playbooks/files/monocle-sample.yaml
+
+- name: Wait until the Monocle instance is ready
+  shell: |
+    kubectl describe Monocle monocle-sample
+  register: status
+  until:
+    - "'monocle-api:Ready' in status.stdout"
+    - "'monocle-crawler:Ready' in status.stdout"
+    - "'monocle-elastic:Ready' in status.stdout"
+  delay: 10
+  retries: 30
