@@ -1,10 +1,11 @@
 - name: Create the monocle namespace
-  command: |
+  shell: |
     kubectl create namespace monocle
     kubectl config set-context microshift --namespace=monocle
 
 - name: Run the operator
-  command: go run ./main.go
+  shell: |
+    go run ./main.go > ~/operator.stdout 2>&1
   async: 100000
   poll: 0
   args:

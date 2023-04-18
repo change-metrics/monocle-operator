@@ -7,6 +7,10 @@
         path: "{{ output_dir }}"
         state: directory
 
+    - name: Get the go run command output
+      shell: |
+        cp -Rf ~/operator.stdout {{ output_logs_dir }}/
+
     - name: Get all resources in current namespace
       shell: |
         kubectl get all > {{ output_dir }}/namespace-resources-all.txt
@@ -23,6 +27,7 @@
         done
       ignore_errors: true
       loop:
+        - Monocle
         - pods
         - deployments
         - statefulsets

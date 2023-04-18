@@ -3,7 +3,7 @@
     name: monocle-operator-test
     run: playbooks/main.yaml
     parent: base-microshift
-    timeout: 1200
+    timeout: 900
     post-run: playbooks/post.yaml
     nodeset:
       nodes:
