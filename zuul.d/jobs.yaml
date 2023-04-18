@@ -1,0 +1,23 @@
+---
+- job:
+    name: monocle-operator-test
+    run: playbooks/main.yaml
+    parent: base-microshift
+    timeout: 1200
+    post-run: playbooks/post.yaml
+    nodeset:
+      nodes:
+        name: controller
+        label: cloud-centos-9-stream
+    vars:
+      logclassify_logserver_dir: ./
+      logclassify_debug: false
+      logclassify_report: true
+      # microshift deployment
+      microshift_version: 4.12
+      configure_dnsmasq: false
+      disk_file_sparsed: true
+      standard_user: false
+      create_pv: false
+      # post tasks artifacts directory
+      output_logs_dir: ~/zuul-output/logs
