@@ -1,0 +1,4 @@
+- hosts: "{{ hostname | default('all') }}"
+  tasks:
+    - debug:
+        msg: "In main"
