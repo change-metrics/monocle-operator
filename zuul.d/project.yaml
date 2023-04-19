@@ -2,3 +2,9 @@
     check:
       jobs:
         - monocle-operator-test
+    gate:
+      jobs:
+        - monocle-operator-test
+    post:
+      jobs:
+        - monocle-operator-publish

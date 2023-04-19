@@ -1,0 +1,17 @@
+- hosts: "{{ hostname | default('all') }}"
+  tasks:
+    - name: Install system dependencies
+      become: true
+      ansible.builtin.package:
+        - make
+        - podman
+
+    - name: Build operator image
+      shell: make container-build
+
+    - name: Login on quay.io
+      shell: podman login -u="{{ quay_io_account.username }}" -p="{{ quay_io_account.password }}" quay.io
+      no_log: true
+
+    - name: Publish image
+      shell: make container-push
