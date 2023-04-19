@@ -37,6 +37,8 @@ spec:
             properties:
               FQDN:
                 type: string
+              storageClassName:
+                type: string
             required:
             - FQDN
             type: object

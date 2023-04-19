@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - [CI] Add a test to validate access to the Monocle WEB UI
+- [CRD] Add optional `storageClassName` attribute. Used for the database volume.
 
 ### Changed
 
