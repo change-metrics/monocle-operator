@@ -57,6 +57,8 @@ import (
 // +kubebuilder:rbac:groups=v1,resources=configmaps/status,verbs=get
 // +kubebuilder:rbac:groups=v1,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=v1,resources=secrets/status,verbs=get
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/status,verbs=get
 
 // MonocleReconciler reconciles a Monocle object
 type MonocleReconciler struct {

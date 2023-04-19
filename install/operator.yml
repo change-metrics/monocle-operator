@@ -157,6 +157,24 @@ rules:
   - patch
   - update
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses/status
+  verbs:
+  - get
+- apiGroups:
   - v1
   resources:
   - configmaps
@@ -380,7 +398,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: quay.io/change-metrics/monocle-operator:v0.0.1
+        image: quay.io/change-metrics/monocle-operator:latest
         livenessProbe:
           httpGet:
             path: /healthz
