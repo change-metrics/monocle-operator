@@ -9,4 +9,4 @@ metadata:
     app.kubernetes.io/created-by: monocle-operator
   name: monocle-sample
 spec:
-  monoclePublicFQDN: "monocle.test"
+  FQDN: "monocle.test"

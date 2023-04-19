@@ -35,10 +35,10 @@ spec:
           spec:
             description: MonocleSpec defines the desired state of Monocle
             properties:
-              monoclePublicFQDN:
+              FQDN:
                 type: string
             required:
-            - monoclePublicFQDN
+            - FQDN
             type: object
           status:
             description: MonocleStatus defines the observed state of Monocle

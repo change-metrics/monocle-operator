@@ -1,0 +1,12 @@
+- name: Attempt to access the Monocle Web UI
+  ansible.builtin.uri:
+    url: "https://microshift.dev"
+    method: GET
+    return_content: true
+    validate_certs: false
+    headers:
+      HOST: "monocle.test"
+  register: this
+  until: "'monocle.test' in this.content"
+  delay: 5
+  retries: 3

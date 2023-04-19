@@ -6,3 +6,5 @@
     - run-operator
     # Claim a Monocle instance
     - claim-instance
+    # Validate the Monocle instance
+    - validate-instance
