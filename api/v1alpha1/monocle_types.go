@@ -22,7 +22,7 @@ import (
 
 // MonocleSpec defines the desired state of Monocle
 type MonocleSpec struct {
-	MonoclePublicFQDN string `json:"monoclePublicFQDN"`
+	FQDN string `json:"FQDN"`
 }
 
 // MonocleStatus defines the observed state of Monocle

@@ -561,7 +561,7 @@ workspaces:
 		}
 	}
 
-	monoclePublicURL := "https://" + instance.Spec.MonoclePublicFQDN
+	monoclePublicURL := "https://" + instance.Spec.FQDN
 	logger.Info("Monocle public URL set to", "url", monoclePublicURL)
 
 	err = r.Client.Get(
@@ -734,7 +734,7 @@ workspaces:
 		apiIngress.Spec = netv1.IngressSpec{
 			Rules: []netv1.IngressRule{
 				{
-					Host: instance.Spec.MonoclePublicFQDN,
+					Host: instance.Spec.FQDN,
 					IngressRuleValue: netv1.IngressRuleValue{
 						HTTP: &netv1.HTTPIngressRuleValue{
 							Paths: []netv1.HTTPIngressPath{
