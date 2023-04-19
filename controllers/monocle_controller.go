@@ -287,10 +287,20 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		},
 	}
 	elasticReplicasCount := int32(1)
-	// TODO How to handle this ? Should it be expose via the CRD ?
-	elasticPVCStorageClassName := "topolvm-provisioner"
-	// TODO How to handle this ? Should it be expose via the CRD ?
-	elasticPVCStorageQuantity := resource.NewQuantity(1*10^9, resource.DecimalSI)
+
+	// Default to 1Gi
+	defaultSize := resource.NewQuantity(1*10^9, resource.DecimalSI)
+
+	var elasticPVCStorageQuantity resource.Quantity
+	if instance.Spec.StorageSize != "" {
+		elasticPVCStorageQuantity, err = resource.ParseQuantity(instance.Spec.StorageSize)
+		if err != nil {
+			logger.Error(err, "Unable to parse provided storageSize, use default", instance.Spec.StorageSize)
+			elasticPVCStorageQuantity = *defaultSize
+		}
+	} else {
+		elasticPVCStorageQuantity = *defaultSize
+	}
 
 	elasticSearchReady := func() bool {
 		return elasticReplicasCount == elasticStatefulSet.Status.ReadyReplicas
@@ -307,21 +317,24 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// Set replicas count
 		elasticStatefulSet.Spec.Replicas = &elasticReplicasCount
 		// Set the volume claim templates
+		volumeClaimSpec := corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					"storage": elasticPVCStorageQuantity,
+				},
+			},
+		}
+		if instance.Spec.StorageClassName != "" {
+			volumeClaimSpec.StorageClassName = &instance.Spec.StorageClassName
+		}
 		elasticStatefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
 			{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      elasticDataVolumeName,
 					Namespace: req.Namespace,
 				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: &elasticPVCStorageClassName,
-					AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							"storage": *elasticPVCStorageQuantity,
-						},
-					},
-				},
+				Spec: volumeClaimSpec,
 			},
 		}
 
