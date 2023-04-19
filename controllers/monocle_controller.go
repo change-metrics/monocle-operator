@@ -287,8 +287,20 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		},
 	}
 	elasticReplicasCount := int32(1)
-	// TODO How to handle this ? Should it be expose via the CRD ?
-	elasticPVCStorageQuantity := resource.NewQuantity(1*10^9, resource.DecimalSI)
+
+	// Default to 1Gi
+	defaultSize := resource.NewQuantity(1*10^9, resource.DecimalSI)
+
+	var elasticPVCStorageQuantity resource.Quantity
+	if instance.Spec.StorageSize != "" {
+		elasticPVCStorageQuantity, err = resource.ParseQuantity(instance.Spec.StorageSize)
+		if err != nil {
+			logger.Error(err, "Unable to parse provided storageSize, use default", instance.Spec.StorageSize)
+			elasticPVCStorageQuantity = *defaultSize
+		}
+	} else {
+		elasticPVCStorageQuantity = *defaultSize
+	}
 
 	elasticSearchReady := func() bool {
 		return elasticReplicasCount == elasticStatefulSet.Status.ReadyReplicas
@@ -309,7 +321,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					"storage": *elasticPVCStorageQuantity,
+					"storage": elasticPVCStorageQuantity,
 				},
 			},
 		}

@@ -24,6 +24,7 @@ import (
 type MonocleSpec struct {
 	FQDN             string `json:"FQDN"`
 	StorageClassName string `json:"storageClassName,omitempty"`
+	StorageSize      string `json:"storageSize,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle
