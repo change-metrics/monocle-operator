@@ -288,9 +288,9 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 	elasticReplicasCount := int32(1)
 	// TODO How to handle this ? Should it be expose via the CRD ?
-	elasticPVCStorageClassName := "standard"
+	elasticPVCStorageClassName := "topolvm-provisioner"
 	// TODO How to handle this ? Should it be expose via the CRD ?
-	elasticPVCStorageQuantity := resource.NewQuantity(1*1000*1000*1000, resource.DecimalSI)
+	elasticPVCStorageQuantity := resource.NewQuantity(1*10^9, resource.DecimalSI)
 
 	elasticSearchReady := func() bool {
 		return elasticReplicasCount == elasticStatefulSet.Status.ReadyReplicas

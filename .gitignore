@@ -26,4 +26,4 @@ Dockerfile.cross
 *~
 
 # monocle-operator
-monocle-sample.yaml
+/monocle-sample.yaml

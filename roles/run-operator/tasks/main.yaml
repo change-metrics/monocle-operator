@@ -1,0 +1,14 @@
+- name: Create the monocle namespace
+  shell: |
+    kubectl create namespace monocle
+    kubectl config set-context microshift --namespace=monocle
+
+- name: Run the operator
+  shell: |
+    go run ./main.go > ~/operator.stdout 2>&1
+  async: 100000
+  poll: 0
+  args:
+    chdir: "{{ zuul.project.src_dir }}"
+  environment:
+    WATCH_NAMESPACE: monocle

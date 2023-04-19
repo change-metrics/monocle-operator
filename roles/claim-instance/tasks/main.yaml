@@ -1,0 +1,16 @@
+- name: Deploy monocle-sample instance
+  shell: |
+    kubectl apply -f playbooks/files/monocle-sample.yaml
+  args:
+    chdir: "{{ zuul.project.src_dir }}"
+
+- name: Wait until the Monocle instance is ready
+  shell: |
+    kubectl get Monocle monocle-sample -o yaml
+  register: status
+  until:
+    - "'monocle-api: Ready' in status.stdout"
+    - "'monocle-crawler: Ready' in status.stdout"
+    - "'monocle-elastic: Ready' in status.stdout"
+  delay: 10
+  retries: 30
