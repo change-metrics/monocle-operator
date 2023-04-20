@@ -1,10 +1,11 @@
 - hosts: "{{ hostname | default('all') }}"
   tasks:
     - name: Install system dependencies
+      package:
+        name:
+          - make
+          - podman
       become: true
-      ansible.builtin.package:
-        - make
-        - podman
 
     - name: Build operator image
       shell: make container-build
