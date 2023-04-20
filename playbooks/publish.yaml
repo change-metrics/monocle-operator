@@ -4,6 +4,7 @@
       package:
         name:
           - make
+          - golang
           - podman
       become: true
 
