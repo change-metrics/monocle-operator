@@ -21,3 +21,15 @@
       create_pv: false
       # post tasks artifacts directory
       output_logs_dir: ~/zuul-output/logs
+
+- job:
+    name: monocle-operator-publish
+    run: playbooks/publish.yaml
+    timeout: 900
+    secrets:
+      name: quay_io_account
+      secret: quay_io_monocle_operator
+    nodeset:
+      nodes:
+        name: controller
+        label: cloud-centos-9-stream
