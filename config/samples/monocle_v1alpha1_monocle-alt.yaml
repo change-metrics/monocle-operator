@@ -9,4 +9,4 @@ metadata:
     app.kubernetes.io/created-by: monocle-operator
   name: monocle-sample
 spec:
-  monoclePublicURL: "http://localhost:8090"
+  FQDN: monocle.test
