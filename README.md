@@ -147,6 +147,33 @@ start a fresh deployment.
 $ kubectl delete pvc monocle-sample-elastic-data-volume-monocle-sample-elastic-0
 ```
 
+## Generate assets
+
+A CI post job build and publish the operator and OLM bundle container images
+in the [quay.io organization](https://quay.io/organization/change-metrics).
+
+These commands can be use build assets bases on an alternative `IMAGE_TAG_BASE` environment variable.
+
+### Build and publish the operator image
+
+```
+make container-build
+make container-push
+```
+
+### Build resources for the vanilla installation
+
+```
+make gen-operator-install
+```
+
+### Build the OLM bundle image
+
+```
+make bundle
+make bundle-container-build
+```
+
 ## License
 
 Copyright 2023 Monocle developers.
