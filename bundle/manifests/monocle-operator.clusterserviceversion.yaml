@@ -21,8 +21,8 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2023-03-06T11:51:10Z"
-    operators.operatorframework.io/builder: operator-sdk-v1.27.0
+    createdAt: "2023-04-25T08:52:20Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.28.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
   name: monocle-operator.v0.0.1
   namespace: placeholder
@@ -78,12 +78,9 @@ spec:
           - create
           - patch
         - apiGroups:
-          - ""
+          - apps
           resources:
           - deployments
-          - secret
-          - service
-          - statefulset
           verbs:
           - create
           - delete
@@ -93,9 +90,15 @@ spec:
           - update
           - watch
         - apiGroups:
-          - '*'
+          - apps
           resources:
-          - '*'
+          - deployments/status
+          verbs:
+          - get
+        - apiGroups:
+          - apps
+          resources:
+          - statefulsets
           verbs:
           - create
           - delete
@@ -105,17 +108,127 @@ spec:
           - update
           - watch
         - apiGroups:
-          - authentication.k8s.io
+          - apps
           resources:
-          - tokenreviews
+          - statefulsets/status
           verbs:
-          - create
+          - get
         - apiGroups:
-          - authorization.k8s.io
+          - batch
           resources:
-          - subjectaccessreviews
+          - jobs
           verbs:
           - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - batch
+          resources:
+          - jobs/status
+          verbs:
+          - get
+        - apiGroups:
+          - monocle.monocle.change-metrics.io
+          resources:
+          - monocles
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - monocle.monocle.change-metrics.io
+          resources:
+          - monocles/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - monocle.monocle.change-metrics.io
+          resources:
+          - monocles/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - networking.k8s.io
+          resources:
+          - ingresses
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - networking.k8s.io
+          resources:
+          - ingresses/status
+          verbs:
+          - get
+        - apiGroups:
+          - v1
+          resources:
+          - configmaps
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - v1
+          resources:
+          - configmaps/status
+          verbs:
+          - get
+        - apiGroups:
+          - v1
+          resources:
+          - secrets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - v1
+          resources:
+          - secrets/status
+          verbs:
+          - get
+        - apiGroups:
+          - v1
+          resources:
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - v1
+          resources:
+          - services/status
+          verbs:
+          - get
         serviceAccountName: monocle-operator-controller-manager
       deployments:
       - label:
@@ -186,12 +299,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                env:
-                - name: WATCH_NAMESPACE
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.annotations['olm.targetNamespaces']
-                image: quay.io/rh_ee_fserucas/monocle-operator:0.1
+                image: quay.io/change-metrics/monocle-operator:v0.0.1
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -219,6 +327,8 @@ spec:
                     - ALL
               securityContext:
                 runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
               serviceAccountName: monocle-operator-controller-manager
               terminationGracePeriodSeconds: 10
     strategy: deployment

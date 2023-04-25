@@ -1,4 +1,4 @@
-- name: Install dependencies
+- name: Install system dependencies
   block:
     - name: Install packages
       package:
@@ -7,8 +7,22 @@
           - make
       become: true
 
+- name: Install operator-sdk
+  become: true
+  ansible.builtin.uri:
+    url: https://github.com/operator-framework/operator-sdk/releases/download/v1.28.0/operator-sdk_linux_amd64
+    dest: /usr/bin/operator-sdk
+    mode: "755"
+    status_code:
+      - 200
+      - 304
+
 - name: Run make
   command: make
+  loop:
+    - make
+    - make gen-operator-install
+    - make bundle
   args:
     chdir: "{{ zuul.project.src_dir }}"
 
@@ -25,7 +39,8 @@
   debug:
     msg: |
       The repository content is not consistent.
-      Please commit the change made after running `make`.
+      Please commit the change made after running
+      make && make gen-operator-install && make bundle
 
       {{ render_diff.stdout }}
 

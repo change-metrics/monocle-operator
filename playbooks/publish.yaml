@@ -13,11 +13,21 @@
       args:
         chdir: "{{ zuul.project.src_dir }}"
 
+    - name: Build OLM bundle image
+      shell: make bundle-container-build
+      args:
+        chdir: "{{ zuul.project.src_dir }}"
+
     - name: Login on quay.io
       shell: podman login -u="{{ quay_io_account.username }}" -p="{{ quay_io_account.password }}" quay.io
       no_log: true
 
-    - name: Publish image
+    - name: Publish operator image
       shell: make container-push
+      args:
+        chdir: "{{ zuul.project.src_dir }}"
+
+    - name: Publish OLM bundle image
+      shell: make bundle-container-push
       args:
         chdir: "{{ zuul.project.src_dir }}"
