@@ -57,6 +57,7 @@ spec:
   - name: Monocle Blog
     url: https://changemetrics.io
   maturity: alpha
+  minKubeVersion: 1.26.0
   provider:
     name: Change Metrics
     url: https://github.com/change-metrics
