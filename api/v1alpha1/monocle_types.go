@@ -22,9 +22,12 @@ import (
 
 // MonocleSpec defines the desired state of Monocle
 type MonocleSpec struct {
-	FQDN             string `json:"FQDN"`
+	// Fully Qualified Domain Name to access the Monocle Web UI
+	FQDN string `json:"FQDN"`
+	// Storage class name when creating the PVC
 	StorageClassName string `json:"storageClassName,omitempty"`
-	StorageSize      string `json:"storageSize,omitempty"`
+	// Initial Storage Size for the database storage
+	StorageSize string `json:"storageSize,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle
