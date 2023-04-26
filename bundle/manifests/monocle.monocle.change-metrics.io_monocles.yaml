@@ -35,10 +35,14 @@ spec:
             description: MonocleSpec defines the desired state of Monocle
             properties:
               FQDN:
+                description: Fully Qualified Domain Name to access the Monocle Web
+                  UI
                 type: string
               storageClassName:
+                description: Storage class name when creating the PVC
                 type: string
               storageSize:
+                description: Initial Storage Size for the database storage
                 type: string
             required:
             - FQDN
