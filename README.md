@@ -104,10 +104,10 @@ $ go run ./main.go
 In another terminal apply the Custom Resource:
 
 ```bash
-$ cp config/samples/monocle_v1alpha1_monocle-alt.yaml monocle-sample.yaml
+$ cp config/samples/monocle_v1alpha1_monocle.yaml monocle-sample.yaml
 # Update the monoclePublicFQDN to a FQDN to contact the deployment
 # You might need to update the /etc/hosts
-$ kubectl apply -f config/samples/monocle_v1alpha1_monocle-alt.yaml
+$ kubectl apply -f config/samples/monocle_v1alpha1_monocle.yaml
 # The reconcile loop should stop shortly and you should see in
 # the other terminal:
 # 1.676629527659292e+09   INFO    monocle operand reconcile terminated
