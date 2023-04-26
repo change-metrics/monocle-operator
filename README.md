@@ -172,6 +172,30 @@ make gen-operator-install
 ```
 make bundle
 make bundle-container-build
+make bundle-container-push
+```
+
+### Deploy the OLM bundle via operator-sdk run bundle
+
+```
+# Create a new namespace
+kubectl create ns bundle-catalog-ns
+# It seems that a batch job fails if not added to privileged
+oc adm policy add-scc-to-user privileged system:serviceaccount:bundle-catalog-ns:default
+operator-sdk --verbose run bundle quay.io/change-metrics/monocle-operator-bundle:v0.0.1 \
+    --namespace bundle-catalog-ns --security-context-config restricted
+```
+
+The command creates an index based on the opm image, defines a catalogsource resources,
+defines a subscription to the monocle-operator, then accepts the installplan.
+
+```
+kubectl -n bundle-catalog-ns get calalogsource
+kubectl -n bundle-catalog-ns get sub
+kubectl -n bundle-catalog-ns get csv
+kubectl -n bundle-catalog-ns get all
+# The operator should be deployed in that namespace
+# Another namespace can be created to request a Monocle instance to the operator
 ```
 
 ## License
