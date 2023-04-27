@@ -25,7 +25,7 @@ metadata:
     capabilities: Basic Install
     categories: Big Data, Developer Tools, Logging & Tracing
     containerImage: quay.io/change-metrics/monocle-operator:v0.0.1
-    createdAt: "2023-04-26T14:00:53Z"
+    createdAt: "2023-04-27T08:45:48Z"
     operators.operatorframework.io/builder: operator-sdk-v1.28.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/change-metrics/monocle-operator
@@ -368,7 +368,7 @@ spec:
   - name: Monocle Blog
     url: https://changemetrics.io
   maturity: alpha
-  minKubeVersion: 1.26.0
+  minKubeVersion: 1.24.0
   provider:
     name: Change Metrics
     url: https://github.com/change-metrics
