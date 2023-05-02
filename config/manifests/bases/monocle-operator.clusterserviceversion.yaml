@@ -57,6 +57,9 @@ spec:
     url: https://github.com/change-metrics/monocle
   - name: Monocle Blog
     url: https://changemetrics.io
+  maintainers:
+  - email: fboucher@redhat.com
+    name: Fabien Boucher
   maturity: alpha
   minKubeVersion: 1.24.0
   provider:
