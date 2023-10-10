@@ -125,7 +125,7 @@ func main() {
 		}
 		setupLog.Info("Reconciling from CR passed by parameter",
 			"CR", monocleResource,
-			"CR name", mr.Spec.FQDN,
+			"CR name", mr.ObjectMeta.Name,
 			"NS", monocleNamespace)
 		err = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 			reconcilier.StandaloneReconcile(ctx, monocleNamespace, mr)

@@ -9,6 +9,8 @@
       devShells.x86_64-linux.default = pkgs.mkShell {
         name = "Monocle-Operator build environment";
         buildInputs = [
+          # 4.12.0 in nixpkgs
+          pkgs.openshift
           # 1.27.1 in nixpkgs
           pkgs.kubectl
           # 1.20.4 in nixpkgs
