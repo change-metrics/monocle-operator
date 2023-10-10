@@ -17,7 +17,6 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -31,9 +30,9 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	monoclev1alpha1 "github.com/change-metrics/monocle-operator/api/v1alpha1"
 	"github.com/change-metrics/monocle-operator/controllers"
@@ -95,26 +94,16 @@ func main() {
 		standalone = true
 	}
 
-	watchNamespace, err := getWatchNamespace()
-	if err != nil {
-		setupLog.Error(err, "unable to get WatchNamespace, "+
-			"the manager will watch and manage resources in all namespaces")
-	}
-
 	if standalone {
 		var mr monoclev1alpha1.Monocle
-		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-			Scheme:             scheme,
-			LeaderElection:     false,
-			MetricsBindAddress: "0",
-		})
+		cl, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 		if err != nil {
-			setupLog.Error(err, "unable to start manager")
+			setupLog.Error(err, "unable to create a client")
 			os.Exit(1)
 		}
 		reconcilier := controllers.MonocleReconciler{
-			Client: mgr.GetClient(),
-			Scheme: mgr.GetScheme(),
+			Client: cl,
+			Scheme: scheme,
 		}
 		dat, err := os.ReadFile(monocleResource)
 		if err != nil {
@@ -123,24 +112,19 @@ func main() {
 		if err := yaml.Unmarshal(dat, &mr); err != nil {
 			panic(err.Error())
 		}
-		setupLog.Info("Reconciling from CR passed by parameter",
+		setupLog.Info("Standalone reconciling from CR passed by parameter",
 			"CR", monocleResource,
 			"CR name", mr.ObjectMeta.Name,
 			"NS", monocleNamespace)
-		err = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
-			reconcilier.StandaloneReconcile(ctx, monocleNamespace, mr)
-			return nil
-		}))
-		if err != nil {
-			setupLog.Error(err, "unable add a runnable to the manager")
-			os.Exit(1)
-		}
-		setupLog.Info("starting manager")
-		if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-			setupLog.Error(err, "problem running manager")
-			os.Exit(1)
-		}
+		ctx := ctrl.SetupSignalHandler()
+		reconcilier.StandaloneReconcile(ctx, monocleNamespace, mr)
+		os.Exit(0)
 	} else {
+		watchNamespace, err := getWatchNamespace()
+		if err != nil {
+			setupLog.Error(err, "unable to get WatchNamespace, "+
+				"the manager will watch and manage resources in all namespaces")
+		}
 		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 			Scheme:                 scheme,
 			MetricsBindAddress:     metricsAddr,

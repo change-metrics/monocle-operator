@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"os"
 	"strconv"
 	"time"
 
@@ -80,8 +79,9 @@ func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, log
 }
 
 func triggerUpdateIdentsJob(
-	r *MonocleReconciler, ctx context.Context, instance monoclev1alpha1.Monocle, namespace string,
-	logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string, monocleImage string) error {
+	r *MonocleReconciler, ctx context.Context, owner metav1.Object, namespace string,
+	logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string, monocleImage string,
+	standalone bool) error {
 
 	jobname := "update-idents-job"
 	job := batchv1.Job{
@@ -151,7 +151,7 @@ func triggerUpdateIdentsJob(
 			},
 		},
 	}
-	if err := ctrl_util.SetControllerReference(&instance, &jobToCreate, r.Scheme); err != nil {
+	if err := r.setOwnerReference(owner, &jobToCreate, logger, standalone); err != nil {
 		logger.Info("Unable to set controller reference", "name", jobname)
 	}
 
@@ -182,6 +182,23 @@ func reconcileLater(err error) (ctrl.Result, error) {
 
 func stopReconcile() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
+}
+
+func (r *MonocleReconciler) setOwnerReference(
+	owner metav1.Object, controlled metav1.Object, logger logr.Logger, standalone bool) error {
+	var err error
+	if standalone {
+		println("Use setOwner")
+		err = ctrl_util.SetOwnerReference(owner, controlled, r.Scheme)
+	} else {
+		println("Use setController")
+		err = ctrl_util.SetControllerReference(owner, controlled, r.Scheme)
+	}
+	if err != nil {
+		logger.Error(err, "Unable to set controller reference", "name", controlled.GetName())
+
+	}
+	return err
 }
 
 // For more details, check Reconcile and its Result here:
@@ -223,7 +240,6 @@ func (r *MonocleReconciler) StandaloneReconcile(ctx context.Context, ns string, 
 		time.Sleep(d)
 	}
 	log.Log.Info("Standalone reconcile done.")
-	os.Exit(0)
 }
 
 func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instance monoclev1alpha1.Monocle, standalone bool) (ctrl.Result, error) {
@@ -265,7 +281,9 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 			// Eventually handle resource update
 			logger.Info("Resource fetched successfuly", "name", controllerCMName)
 		}
-		owner = controllerCM.DeepCopy()
+		owner = &controllerCM
+	} else {
+		owner = &instance
 	}
 
 	////////////////////////////////////////////////////////
@@ -300,7 +318,7 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 			},
 			Selector: elasticMatchLabels,
 		}
-		if err := ctrl_util.SetControllerReference(owner, &elasticService, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &elasticService, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", elasticServiceName)
 			return reconcileLater(err)
 		}
@@ -446,7 +464,7 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 			},
 		}
 		// Add owner reference
-		if err := ctrl_util.SetControllerReference(owner, &elasticStatefulSet, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &elasticStatefulSet, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", elasticStatefulSetName)
 			return reconcileLater(err)
 		}
@@ -485,7 +503,7 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 		ctx, client.ObjectKey{Name: apiSecretName, Namespace: ns}, &apiSecret)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		apiSecret.Data = apiSecretData
-		if err := ctrl_util.SetControllerReference(owner, &apiSecret, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &apiSecret, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", apiSecretName)
 			return reconcileLater(err)
 		}
@@ -528,7 +546,7 @@ workspaces:
 		ctx, client.ObjectKey{Name: apiConfigMapName, Namespace: ns}, &apiConfigMap)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		apiConfigMap.Data = apiConfigMapData
-		if err := ctrl_util.SetControllerReference(owner, &apiConfigMap, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &apiConfigMap, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", apiConfigMapName)
 			return reconcileLater(err)
 		}
@@ -582,7 +600,7 @@ workspaces:
 			},
 			Selector: apiMatchLabels,
 		}
-		if err := ctrl_util.SetControllerReference(owner, &apiService, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &apiService, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", apiServiceName)
 			return reconcileLater(err)
 		}
@@ -717,7 +735,7 @@ workspaces:
 				},
 			},
 		}
-		if err := ctrl_util.SetControllerReference(owner, &apiDeployment, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &apiDeployment, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", apiDeploymentName)
 			return reconcileLater(err)
 		}
@@ -771,7 +789,8 @@ workspaces:
 				return reconcileLater(err)
 			}
 			// Trigger the job
-			err = triggerUpdateIdentsJob(r, ctx, instance, ns, logger, elasticUrlEnvVar, apiConfigMapName, instance.Spec.Image)
+			err = triggerUpdateIdentsJob(r, ctx, owner, ns, logger, elasticUrlEnvVar,
+				apiConfigMapName, instance.Spec.Image, standalone)
 			if err != nil {
 				logger.Error(err, "Unable to trigger update-idents", "name", err)
 				return reconcileLater(err)
@@ -896,7 +915,7 @@ workspaces:
 				},
 			},
 		}
-		if err := ctrl_util.SetControllerReference(owner, &crawlerDeployment, r.Scheme); err != nil {
+		if err := r.setOwnerReference(owner, &crawlerDeployment, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", crawlerDeploymentName)
 			return reconcileLater(err)
 		}
