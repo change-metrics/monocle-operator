@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"time"
 
@@ -79,7 +80,9 @@ func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, log
 	return nil
 }
 
-func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance monoclev1alpha1.Monocle, namespace string, logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string) error {
+func triggerUpdateIdentsJob(
+	r *MonocleReconciler, ctx context.Context, instance monoclev1alpha1.Monocle, namespace string,
+	logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string, monocleImage string) error {
 
 	jobname := "update-idents-job"
 	job := batchv1.Job{
@@ -118,7 +121,7 @@ func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance 
 					Containers: []corev1.Container{
 						{
 							Name:    jobname,
-							Image:   "quay.io/change-metrics/monocle:1.8.0",
+							Image:   monocleImage,
 							Command: []string{"bash"},
 							Args:    []string{"-c", " monocle janitor update-idents --elastic ${MONOCLE_ELASTIC_URL} --config /etc/monocle/config.yaml"},
 							Env: []corev1.EnvVar{
@@ -163,26 +166,15 @@ func serviceStatusConverter(isReady bool) string {
 	return "In Progress ..."
 }
 
-// https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#deployment-status
-func isDeploymentReady(cond appsv1.DeploymentCondition) bool {
-	switch cond.Status {
-	case corev1.ConditionTrue:
-		switch cond.Type {
-		case appsv1.DeploymentAvailable:
-			return true
-		case appsv1.DeploymentProgressing:
-			switch cond.Reason {
-			case "NewReplicaSetAvailable", "FoundNewReplicaSet", "ReplicaSetUpdated":
-				return true
-			default:
-				return false
-			}
-		default:
-			return false
-		}
-	default:
-		return false
-	}
+// IsDeploymentRolloutDone returns True when the Deployment rollout is over
+func IsDeploymentRolloutDone(obj *appsv1.Deployment) bool {
+	return obj.Status.ObservedGeneration >= obj.Generation &&
+		obj.Status.Replicas == obj.Status.ReadyReplicas &&
+		obj.Status.Replicas == obj.Status.AvailableReplicas
+}
+
+func isDeploymentReady(dep *appsv1.Deployment) bool {
+	return dep.Status.ReadyReplicas > 0 && IsDeploymentRolloutDone(dep)
 }
 
 func reconcileLater(err error) (ctrl.Result, error) {
@@ -222,13 +214,17 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *MonocleReconciler) StandaloneReconcile(ctx context.Context, ns string, instance monoclev1alpha1.Monocle) {
+	d, _ := time.ParseDuration("5s")
 	for {
 		result, err := r.ReconcileStep(ctx, ns, instance, true)
 		if (result == ctrl.Result{} && err == nil) {
 			break
 		}
+		log.Log.Info("Waiting 5s for the next reconcile call ...")
+		time.Sleep(d)
 	}
 	log.Log.Info("Standalone reconcile done.")
+	os.Exit(0)
 }
 
 func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instance monoclev1alpha1.Monocle, standalone bool) (ctrl.Result, error) {
@@ -270,8 +266,6 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 			// Eventually handle resource update
 			logger.Info("Resource fetched successfuly", "name", controllerCMName)
 		}
-		// err = ctrl_util.SetControllerReference(&controllerCM, &instance, r.Scheme)
-		// logger.Error(err, "")
 		owner = controllerCM.DeepCopy()
 	}
 
@@ -611,29 +605,21 @@ workspaces:
 	///////////////////////////
 
 	apiDeploymentName := resourceName("api")
-	apiDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      apiDeploymentName,
-			Namespace: ns,
-		},
-	}
-	apiReplicasCount := int32(1)
-
-	// Func to get the last condition of the Monocle API Deployment instance
-	apiDeploymentLastCondition := func() appsv1.DeploymentCondition {
-		if len(apiDeployment.Status.Conditions) > 0 {
-			return apiDeployment.Status.Conditions[0]
-		} else {
-			return appsv1.DeploymentCondition{}
-		}
-	}
 
 	monoclePublicURL := "https://" + instance.Spec.FQDN
 	logger.Info("Monocle public URL set to", "url", monoclePublicURL)
 
+	var currentApiDeployment appsv1.Deployment
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: ns}, &apiDeployment)
+		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: ns}, &currentApiDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
+		apiDeployment := appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      apiDeploymentName,
+				Namespace: ns,
+			},
+		}
+		apiReplicasCount := int32(1)
 		// Setup the deployment object
 		apiConfigMapVolumeName := resourceName("api-cm-volume")
 		// Once created Deployment selector is immutable
@@ -654,6 +640,7 @@ workspaces:
 				Labels: apiMatchLabels,
 				Annotations: map[string]string{
 					"apiSecretsVersion": apiSecretsVersion,
+					"monocleImage":      instance.Spec.MonocleImage,
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -675,7 +662,7 @@ workspaces:
 								},
 							},
 						},
-						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Image:   instance.Spec.MonocleImage,
 						Command: []string{"monocle", "api"},
 						EnvFrom: []corev1.EnvFromSource{
 							{
@@ -749,30 +736,43 @@ workspaces:
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", apiDeploymentName)
 
+		// Handle Monocle image update
+		if currentApiDeployment.Spec.Template.Annotations["monocleImage"] != instance.Spec.MonocleImage {
+			currentApiDeployment.Spec.Template.Annotations["monocleImage"] = instance.Spec.MonocleImage
+			currentApiDeployment.Spec.Template.Spec.Containers[0].Image = instance.Spec.MonocleImage
+			// Update Deployment Resource to set the new container image
+			logger.Info("Start a rollout of the api due to container image change")
+			err := r.Update(ctx, &currentApiDeployment)
+			if err != nil {
+				logger.Error(err, "Unable to update resource", "name", apiDeploymentName)
+			}
+			return reconcileLater(err)
+		}
+
 		// Check pod template Annotation secretsVersion
-		err := r.rollOutWhenApiSecretsChange(ctx, logger, apiDeployment, apiSecretsVersion)
+		err := r.rollOutWhenApiSecretsChange(ctx, logger, currentApiDeployment, apiSecretsVersion)
 		if err != nil {
 			logger.Info("Unable to update spec deployment annotations", "name", apiDeploymentName)
 			reconcileLater(err)
 		}
 
 		// Check if Deployment Pod Annotation for ConfigMap resource version was updated
-		previousVersion := apiDeployment.Annotations["apiConfigVersion"]
+		previousVersion := currentApiDeployment.Annotations["apiConfigVersion"]
 		if previousVersion != apiConfigVersion {
 
 			logger.Info("Start the update-idents jobs because of api configMap update",
-				"name", apiDeployment.Name,
+				"name", currentApiDeployment.Name,
 				"previous configmap version", previousVersion,
 				"new configmap version", apiConfigVersion)
-			apiDeployment.Annotations["apiConfigVersion"] = apiConfigVersion
+			currentApiDeployment.Annotations["apiConfigVersion"] = apiConfigVersion
 			// Update Deployment Resource to set the new configMap resource version
-			err := r.Update(ctx, &apiDeployment)
+			err := r.Update(ctx, &currentApiDeployment)
 			if err != nil {
 				logger.Error(err, "Unable to update resource", "name", apiDeploymentName)
 				return reconcileLater(err)
 			}
 			// Trigger the job
-			err = triggerUpdateIdentsJob(r, ctx, instance, ns, logger, elasticUrlEnvVar, apiConfigMapName)
+			err = triggerUpdateIdentsJob(r, ctx, instance, ns, logger, elasticUrlEnvVar, apiConfigMapName, instance.Spec.MonocleImage)
 			if err != nil {
 				logger.Error(err, "Unable to trigger update-idents", "name", err)
 				return reconcileLater(err)
@@ -849,30 +849,23 @@ workspaces:
 	monocleAPIInternalURL := "http://" + apiServiceName + ":" + strconv.Itoa(apiPort)
 
 	crawlerDeploymentName := resourceName("crawler")
-	crawlerDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      crawlerDeploymentName,
-			Namespace: ns,
-		},
-	}
-	crawlerReplicasCount := int32(1)
-	crawlerPort := 9001
-	crawlerMatchLabels := map[string]string{
-		"app":  "monocle",
-		"tier": "crawler",
-	}
-	// Func to get the last condition of the Monocle crawler Deployment instance
-	crawlerDeploymentLastCondition := func() appsv1.DeploymentCondition {
-		if len(crawlerDeployment.Status.Conditions) > 0 {
-			return crawlerDeployment.Status.Conditions[0]
-		} else {
-			return appsv1.DeploymentCondition{}
-		}
-	}
 
+	var currentCrawlerDeployment appsv1.Deployment
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: ns}, &crawlerDeployment)
+		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: ns}, &currentCrawlerDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
+		crawlerDeployment := appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      crawlerDeploymentName,
+				Namespace: ns,
+			},
+		}
+		crawlerReplicasCount := int32(1)
+		crawlerPort := 9001
+		crawlerMatchLabels := map[string]string{
+			"app":  "monocle",
+			"tier": "crawler",
+		}
 		// Setup the deployment
 		crawlerConfigMapVolumeName := resourceName("crawler-cm-volume")
 		// Once created Deployment selector is immutable
@@ -888,6 +881,7 @@ workspaces:
 				Labels: crawlerMatchLabels,
 				Annotations: map[string]string{
 					"apiSecretsVersion": apiSecretsVersion,
+					"monocleImage":      instance.Spec.MonocleImage,
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -909,7 +903,7 @@ workspaces:
 								},
 							},
 						},
-						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Image:   instance.Spec.MonocleImage,
 						Command: []string{"monocle", "crawler"},
 						EnvFrom: []corev1.EnvFromSource{
 							{
@@ -983,8 +977,21 @@ workspaces:
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", crawlerDeploymentName)
 
+		// Handle Monocle image update
+		if currentCrawlerDeployment.Spec.Template.Annotations["monocleImage"] != instance.Spec.MonocleImage {
+			currentCrawlerDeployment.Spec.Template.Annotations["monocleImage"] = instance.Spec.MonocleImage
+			currentCrawlerDeployment.Spec.Template.Spec.Containers[0].Image = instance.Spec.MonocleImage
+			// Update Deployment Resource to set the new container image
+			logger.Info("Start a rollout of the crawler due to container image change")
+			err := r.Update(ctx, &currentCrawlerDeployment)
+			if err != nil {
+				logger.Error(err, "Unable to update resource", "name", apiDeploymentName)
+			}
+			return reconcileLater(err)
+		}
+
 		// Check pod template Annotation secretsVersion
-		err := r.rollOutWhenApiSecretsChange(ctx, logger, crawlerDeployment, apiSecretsVersion)
+		err := r.rollOutWhenApiSecretsChange(ctx, logger, currentCrawlerDeployment, apiSecretsVersion)
 		if err != nil {
 			logger.Info("Unable to update deployment annotations", "name", crawlerDeploymentName)
 			reconcileLater(err)
@@ -997,8 +1004,8 @@ workspaces:
 
 	instance.Status = monoclev1alpha1.MonocleStatus{
 		Elastic: serviceStatusConverter(elasticSearchReady()),
-		Api:     serviceStatusConverter(isDeploymentReady(apiDeploymentLastCondition())),
-		Crawler: serviceStatusConverter(isDeploymentReady(crawlerDeploymentLastCondition())),
+		Api:     serviceStatusConverter(isDeploymentReady(&currentApiDeployment)),
+		Crawler: serviceStatusConverter(isDeploymentReady(&currentCrawlerDeployment)),
 	}
 
 	status := r.Status()
@@ -1017,13 +1024,13 @@ workspaces:
 		reconcileLater(nil)
 	}
 	// Continue reconcile until api is ready
-	if !isDeploymentReady(apiDeploymentLastCondition()) {
-		logger.Info("monocle-api is not ready", "condition", apiDeploymentLastCondition())
+	if !isDeploymentReady(&currentApiDeployment) {
+		logger.Info("monocle-api is not ready")
 		return reconcileLater(nil)
 	}
 	// Continue reconcile until crawler is ready
-	if !isDeploymentReady(crawlerDeploymentLastCondition()) {
-		logger.Info("monocle-crawler is not ready", "condition", crawlerDeploymentLastCondition())
+	if !isDeploymentReady(&currentCrawlerDeployment) {
+		logger.Info("monocle-crawler is not ready")
 		return reconcileLater(nil)
 	}
 

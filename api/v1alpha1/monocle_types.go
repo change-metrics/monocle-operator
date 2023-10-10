@@ -28,6 +28,9 @@ type MonocleSpec struct {
 	StorageClassName string `json:"storageClassName,omitempty"`
 	// Initial Storage Size for the database storage
 	StorageSize string `json:"storageSize,omitempty"`
+	// Monocle container image
+	// +kubebuilder:default:="quay.io/change-metrics/monocle:1.8.0"
+	MonocleImage string `json:"monocleImage,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle

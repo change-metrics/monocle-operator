@@ -39,6 +39,10 @@ spec:
                 description: Fully Qualified Domain Name to access the Monocle Web
                   UI
                 type: string
+              monocleImage:
+                default: quay.io/change-metrics/monocle:1.8.0
+                description: Monocle container image
+                type: string
               storageClassName:
                 description: Storage class name when creating the PVC
                 type: string
