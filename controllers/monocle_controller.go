@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"time"
 
@@ -188,10 +189,8 @@ func (r *MonocleReconciler) setOwnerReference(
 	owner metav1.Object, controlled metav1.Object, logger logr.Logger, standalone bool) error {
 	var err error
 	if standalone {
-		println("Use setOwner")
 		err = ctrl_util.SetOwnerReference(owner, controlled, r.Scheme)
 	} else {
-		println("Use setController")
 		err = ctrl_util.SetControllerReference(owner, controlled, r.Scheme)
 	}
 	if err != nil {
@@ -381,27 +380,6 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 		}
 		// Set replicas count
 		elasticStatefulSet.Spec.Replicas = &elasticReplicasCount
-		// Set the volume claim templates
-		volumeClaimSpec := corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					"storage": elasticPVCStorageQuantity,
-				},
-			},
-		}
-		if instance.Spec.StorageClassName != "" {
-			volumeClaimSpec.StorageClassName = &instance.Spec.StorageClassName
-		}
-		elasticStatefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      elasticDataVolumeName,
-					Namespace: ns,
-				},
-				Spec: volumeClaimSpec,
-			},
-		}
 
 		// Set the StatefulSet pod template
 		elasticStatefulSet.Spec.Template = corev1.PodTemplateSpec{
@@ -429,10 +407,6 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 							},
 						},
 						Env: []corev1.EnvVar{
-							{
-								Name:  "ES_JAVA_OPTS",
-								Value: "-Xms512m -Xmx512m",
-							},
 							{
 								Name:  "discovery.type",
 								Value: "single-node",
@@ -463,6 +437,43 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 				},
 			},
 		}
+
+		// This env var is for debug purpose when PVC capability is broken on your test platform ...
+		_, use_emptydir := os.LookupEnv("USE_EMPTYDIR")
+		if !use_emptydir {
+			// Set the volume claim templates
+			volumeClaimSpec := corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						"storage": elasticPVCStorageQuantity,
+					},
+				},
+			}
+			if instance.Spec.StorageClassName != "" {
+				volumeClaimSpec.StorageClassName = &instance.Spec.StorageClassName
+			}
+			elasticStatefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      elasticDataVolumeName,
+						Namespace: ns,
+					},
+					Spec: volumeClaimSpec,
+				},
+			}
+		} else {
+			logger.Info("Using an empty dir for the ElasticSearch data storage")
+			elasticStatefulSet.Spec.Template.Spec.Volumes = []corev1.Volume{
+				{
+					Name: elasticDataVolumeName,
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+			}
+		}
+
 		// Add owner reference
 		if err := r.setOwnerReference(owner, &elasticStatefulSet, logger, standalone); err != nil {
 			logger.Error(err, "Unable to set controller reference", "name", elasticStatefulSetName)
