@@ -22,12 +22,25 @@ import (
 
 // MonocleSpec defines the desired state of Monocle
 type MonocleSpec struct {
-	// Fully Qualified Domain Name to access the Monocle Web UI
-	FQDN string `json:"FQDN"`
+	// Public URL to access the Monocle API
+	// +kubebuilder:validation:Pattern:=`^https?:\/\/.+$`
+	PublicURL string `json:"publicURL,omitempty"`
 	// Storage class name when creating the PVC
 	StorageClassName string `json:"storageClassName,omitempty"`
 	// Initial Storage Size for the database storage
 	StorageSize string `json:"storageSize,omitempty"`
+	// Monocle container image
+	// +kubebuilder:default:="quay.io/change-metrics/monocle:1.9.0"
+	Image string `json:"image,omitempty"`
+	// If set a Route (Openshift) resource will be spawned
+	Route *MonocleRoute `json:"route,omitempty"`
+}
+
+type MonocleRoute struct {
+	// Labels to add to the Route resource
+	Labels map[string]string `json:"labels,omitempty"`
+	// Hostname to use for setting the Route
+	Host string `json:"host,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle

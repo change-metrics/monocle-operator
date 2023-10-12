@@ -18,22 +18,25 @@ package controllers
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"time"
 
+	"dario.cat/mergo"
 	monoclev1alpha1 "github.com/change-metrics/monocle-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	apiroutev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl_util "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -79,7 +82,10 @@ func (r *MonocleReconciler) rollOutWhenApiSecretsChange(ctx context.Context, log
 	return nil
 }
 
-func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance monoclev1alpha1.Monocle, namespace string, logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string) error {
+func triggerUpdateIdentsJob(
+	r *MonocleReconciler, ctx context.Context, owner metav1.Object, namespace string,
+	logger logr.Logger, elasticUrlEnvVar corev1.EnvVar, apiConfigMapName string, monocleImage string,
+	standalone bool) error {
 
 	jobname := "update-idents-job"
 	job := batchv1.Job{
@@ -118,7 +124,7 @@ func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance 
 					Containers: []corev1.Container{
 						{
 							Name:    jobname,
-							Image:   "quay.io/change-metrics/monocle:1.8.0",
+							Image:   monocleImage,
 							Command: []string{"bash"},
 							Args:    []string{"-c", " monocle janitor update-idents --elastic ${MONOCLE_ELASTIC_URL} --config /etc/monocle/config.yaml"},
 							Env: []corev1.EnvVar{
@@ -149,7 +155,7 @@ func triggerUpdateIdentsJob(r *MonocleReconciler, ctx context.Context, instance 
 			},
 		},
 	}
-	if err := ctrl_util.SetControllerReference(&instance, &jobToCreate, r.Scheme); err != nil {
+	if err := r.setOwnerReference(owner, &jobToCreate, logger, standalone); err != nil {
 		logger.Info("Unable to set controller reference", "name", jobname)
 	}
 
@@ -163,44 +169,77 @@ func serviceStatusConverter(isReady bool) string {
 	return "In Progress ..."
 }
 
-// https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#deployment-status
-func isDeploymentReady(cond appsv1.DeploymentCondition) bool {
-	switch cond.Status {
-	case corev1.ConditionTrue:
-		switch cond.Type {
-		case appsv1.DeploymentAvailable:
-			return true
-		case appsv1.DeploymentProgressing:
-			switch cond.Reason {
-			case "NewReplicaSetAvailable", "FoundNewReplicaSet", "ReplicaSetUpdated":
-				return true
-			default:
-				return false
-			}
-		default:
-			return false
-		}
-	default:
-		return false
+// IsDeploymentRolloutDone returns True when the Deployment rollout is over
+func IsDeploymentRolloutDone(obj *appsv1.Deployment) bool {
+	return obj.Status.ObservedGeneration >= obj.Generation &&
+		obj.Status.Replicas == obj.Status.ReadyReplicas &&
+		obj.Status.Replicas == obj.Status.AvailableReplicas
+}
+
+func isDeploymentReady(dep *appsv1.Deployment) bool {
+	return dep.Status.ReadyReplicas > 0 && IsDeploymentRolloutDone(dep)
+}
+
+func reconcileLater(err error) (ctrl.Result, error) {
+	return ctrl.Result{RequeueAfter: time.Second * 5}, err
+}
+
+func stopReconcile() (ctrl.Result, error) {
+	return ctrl.Result{}, nil
+}
+
+func mkHTTPSRoute(
+	name string, ns string, serviceName string, path string,
+	port int, annotations map[string]string, labels map[string]string) apiroutev1.Route {
+	tls := apiroutev1.TLSConfig{
+		InsecureEdgeTerminationPolicy: apiroutev1.InsecureEdgeTerminationPolicyRedirect,
+		Termination:                   apiroutev1.TLSTerminationEdge,
 	}
+	return apiroutev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   ns,
+			Annotations: annotations,
+			Labels:      labels,
+		},
+		Spec: apiroutev1.RouteSpec{
+			TLS: &tls,
+			To: apiroutev1.RouteTargetReference{
+				Kind:   "Service",
+				Name:   serviceName,
+				Weight: ptr.To[int32](100),
+			},
+			Port: &apiroutev1.RoutePort{
+				TargetPort: intstr.FromInt(port),
+			},
+			Path:           path,
+			WildcardPolicy: "None",
+		},
+	}
+}
+
+func (r *MonocleReconciler) setOwnerReference(
+	owner metav1.Object, controlled metav1.Object, logger logr.Logger, standalone bool) error {
+	var err error
+	if standalone {
+		err = ctrl_util.SetOwnerReference(owner, controlled, r.Scheme)
+	} else {
+		err = ctrl_util.SetControllerReference(owner, controlled, r.Scheme)
+	}
+	if err != nil {
+		logger.Error(err, "Unable to set controller reference", "name", controlled.GetName())
+
+	}
+	return err
 }
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var (
-		logger         = log.FromContext(ctx)
-		reconcileLater = func(err error) (
-			ctrl.Result, error) {
-			return ctrl.Result{RequeueAfter: time.Second * 5}, err
-		}
-		stopReconcile = func() (
-			ctrl.Result, error) {
-			return ctrl.Result{}, nil
-		}
-		instance                 = monoclev1alpha1.Monocle{}
-		runAsNonRoot             = true
-		allowPrivilegeEscalation = false
+		logger   = log.FromContext(ctx)
+		instance = monoclev1alpha1.Monocle{}
+		ns       = req.Namespace
 	)
 
 	logger.Info("Enter Reconcile ...")
@@ -219,9 +258,65 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		// Stop reconcile
 		return reconcileLater(err)
 	}
+	return r.ReconcileStep(ctx, ns, instance, false)
+}
+
+func (r *MonocleReconciler) StandaloneReconcile(ctx context.Context, ns string, instance monoclev1alpha1.Monocle) {
+	d, _ := time.ParseDuration("5s")
+	for {
+		result, err := r.ReconcileStep(ctx, ns, instance, true)
+		if (result == ctrl.Result{} && err == nil) {
+			break
+		}
+		log.Log.Info("Waiting 5s for the next reconcile call ...")
+		time.Sleep(d)
+	}
+	log.Log.Info("Standalone reconcile done.")
+}
+
+func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instance monoclev1alpha1.Monocle, standalone bool) (ctrl.Result, error) {
+	var (
+		runAsNonRoot             = true
+		allowPrivilegeEscalation = false
+		err                      error
+		logger                   = log.FromContext(ctx)
+		owner                    client.Object
+	)
+
+	logger.Info("Enter ReconcileStep ...")
 
 	// Utility to build a name prepended with the Monocle instance's name
 	resourceName := func(rName string) string { return instance.Name + "-" + rName }
+
+	if standalone {
+		controllerCMName := resourceName("fake-controller")
+		controllerCM := corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      controllerCMName,
+				Namespace: ns,
+			}}
+		err = r.Client.Get(
+			ctx, client.ObjectKey{Name: controllerCMName, Namespace: ns}, &controllerCM)
+		if err != nil && k8s_errors.IsNotFound(err) {
+			controllerCM.Data = nil
+			logger.Info("Creating ConfigMap", "name", controllerCMName)
+			// Create the fake controller configMap
+			if err := r.Create(ctx, &controllerCM); err != nil {
+				logger.Error(err, "Unable to create configMap", "name", controllerCMName)
+				return reconcileLater(err)
+			}
+		} else if err != nil {
+			// Handle the unexpected err
+			logger.Error(err, "Unable to get resource", "name", controllerCMName)
+			return reconcileLater(err)
+		} else {
+			// Eventually handle resource update
+			logger.Info("Resource fetched successfuly", "name", controllerCMName)
+		}
+		owner = &controllerCM
+	} else {
+		owner = &instance
+	}
 
 	////////////////////////////////////////////////////////
 	//  Handle the Monocle Elastic StatefulSet instance   //
@@ -239,11 +334,11 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	elasticService := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      elasticServiceName,
-			Namespace: req.Namespace,
+			Namespace: ns,
 		},
 	}
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: elasticServiceName, Namespace: req.Namespace}, &elasticService)
+		ctx, client.ObjectKey{Name: elasticServiceName, Namespace: ns}, &elasticService)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		elasticService.Spec = corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
@@ -255,18 +350,18 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			},
 			Selector: elasticMatchLabels,
 		}
-		if err := ctrl_util.SetControllerReference(&instance, &elasticService, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", elasticServiceName)
+		if err := r.setOwnerReference(owner, &elasticService, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", elasticServiceName)
 			return reconcileLater(err)
 		}
 		logger.Info("Creating Service", "name", elasticServiceName)
 		if err := r.Create(ctx, &elasticService); err != nil {
-			logger.Info("Unable to create service", "name", elasticService)
+			logger.Error(err, "Unable to create service", "name", elasticService)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", elasticServiceName)
+		logger.Error(err, "Unable to get resource", "name", elasticServiceName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
@@ -285,7 +380,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	elasticStatefulSet := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      elasticStatefulSetName,
-			Namespace: req.Namespace,
+			Namespace: ns,
 		},
 	}
 	elasticReplicasCount := int32(1)
@@ -309,7 +404,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: elasticStatefulSetName, Namespace: req.Namespace}, &elasticStatefulSet)
+		ctx, client.ObjectKey{Name: elasticStatefulSetName, Namespace: ns}, &elasticStatefulSet)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		elasticDataVolumeName := resourceName("elastic-data-volume")
 		// Once created StatefulSet selector is immutable
@@ -318,27 +413,6 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		// Set replicas count
 		elasticStatefulSet.Spec.Replicas = &elasticReplicasCount
-		// Set the volume claim templates
-		volumeClaimSpec := corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					"storage": elasticPVCStorageQuantity,
-				},
-			},
-		}
-		if instance.Spec.StorageClassName != "" {
-			volumeClaimSpec.StorageClassName = &instance.Spec.StorageClassName
-		}
-		elasticStatefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      elasticDataVolumeName,
-					Namespace: req.Namespace,
-				},
-				Spec: volumeClaimSpec,
-			},
-		}
 
 		// Set the StatefulSet pod template
 		elasticStatefulSet.Spec.Template = corev1.PodTemplateSpec{
@@ -368,7 +442,7 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 						Env: []corev1.EnvVar{
 							{
 								Name:  "ES_JAVA_OPTS",
-								Value: "-Xms512m -Xmx512m",
+								Value: "-Xms256m -Xmx256m",
 							},
 							{
 								Name:  "discovery.type",
@@ -400,20 +474,57 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				},
 			},
 		}
+
+		// This env var is for debug purpose when PVC capability is broken on your test platform ...
+		_, use_emptydir := os.LookupEnv("USE_EMPTYDIR")
+		if !use_emptydir {
+			// Set the volume claim templates
+			volumeClaimSpec := corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						"storage": elasticPVCStorageQuantity,
+					},
+				},
+			}
+			if instance.Spec.StorageClassName != "" {
+				volumeClaimSpec.StorageClassName = &instance.Spec.StorageClassName
+			}
+			elasticStatefulSet.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      elasticDataVolumeName,
+						Namespace: ns,
+					},
+					Spec: volumeClaimSpec,
+				},
+			}
+		} else {
+			logger.Info("Using an empty dir for the ElasticSearch data storage")
+			elasticStatefulSet.Spec.Template.Spec.Volumes = []corev1.Volume{
+				{
+					Name: elasticDataVolumeName,
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
+				},
+			}
+		}
+
 		// Add owner reference
-		if err := ctrl_util.SetControllerReference(&instance, &elasticStatefulSet, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", elasticStatefulSetName)
+		if err := r.setOwnerReference(owner, &elasticStatefulSet, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", elasticStatefulSetName)
 			return reconcileLater(err)
 		}
 		// Create the resource
 		logger.Info("Creating StatefulSet", "name", elasticStatefulSetName)
 		if err := r.Create(ctx, &elasticStatefulSet); err != nil {
-			logger.Info("Unable to create deployment", "name", elasticStatefulSetName)
+			logger.Error(err, "Unable to create deployment", "name", elasticStatefulSetName)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", elasticStatefulSetName)
+		logger.Error(err, "Unable to get resource", "name", elasticStatefulSetName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
@@ -434,25 +545,25 @@ func (r *MonocleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	apiSecret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiSecretName,
-			Namespace: req.Namespace},
+			Namespace: ns},
 	}
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiSecretName, Namespace: req.Namespace}, &apiSecret)
+		ctx, client.ObjectKey{Name: apiSecretName, Namespace: ns}, &apiSecret)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		apiSecret.Data = apiSecretData
-		if err := ctrl_util.SetControllerReference(&instance, &apiSecret, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", apiSecretName)
+		if err := r.setOwnerReference(owner, &apiSecret, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", apiSecretName)
 			return reconcileLater(err)
 		}
 		logger.Info("Creating secret", "name", apiSecretName)
 		// Create the resource
 		if err := r.Create(ctx, &apiSecret); err != nil {
-			logger.Info("Unable to create secret", "name", apiSecretName)
+			logger.Error(err, "Unable to create secret", "name", apiSecretName)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", apiSecretName)
+		logger.Error(err, "Unable to get resource", "name", apiSecretName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
@@ -476,26 +587,26 @@ workspaces:
 	apiConfigMap := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiConfigMapName,
-			Namespace: req.Namespace},
+			Namespace: ns},
 	}
 
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiConfigMapName, Namespace: req.Namespace}, &apiConfigMap)
+		ctx, client.ObjectKey{Name: apiConfigMapName, Namespace: ns}, &apiConfigMap)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		apiConfigMap.Data = apiConfigMapData
-		if err := ctrl_util.SetControllerReference(&instance, &apiConfigMap, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", apiConfigMapName)
+		if err := r.setOwnerReference(owner, &apiConfigMap, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", apiConfigMapName)
 			return reconcileLater(err)
 		}
 		logger.Info("Creating ConfigMap", "name", apiConfigMapName)
 		// Create the secret
 		if err := r.Create(ctx, &apiConfigMap); err != nil {
-			logger.Info("Unable to create configMap", "name", apiConfigMap)
+			logger.Error(err, "Unable to create configMap", "name", apiConfigMap)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", apiConfigMapName)
+		logger.Error(err, "Unable to get resource", "name", apiConfigMapName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
@@ -521,11 +632,11 @@ workspaces:
 	apiService := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      apiServiceName,
-			Namespace: req.Namespace,
+			Namespace: ns,
 		},
 	}
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiServiceName, Namespace: req.Namespace}, &apiService)
+		ctx, client.ObjectKey{Name: apiServiceName, Namespace: ns}, &apiService)
 	if err != nil && k8s_errors.IsNotFound(err) {
 		apiService.Spec = corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
@@ -537,51 +648,81 @@ workspaces:
 			},
 			Selector: apiMatchLabels,
 		}
-		if err := ctrl_util.SetControllerReference(&instance, &apiService, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", apiServiceName)
+		if err := r.setOwnerReference(owner, &apiService, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", apiServiceName)
 			return reconcileLater(err)
 		}
 		logger.Info("Creating Service", "name", apiServiceName)
 		if err := r.Create(ctx, &apiService); err != nil {
-			logger.Info("Unable to create service", "name", apiService)
+			logger.Error(err, "Unable to create service", "name", apiService)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", apiServiceName)
+		logger.Error(err, "Unable to get resource", "name", apiServiceName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", apiServiceName)
 	}
 
+	// Handle Route for api //
+	////////////////////////////
+
+	if instance.Spec.Route != nil {
+		var apiRouteName = resourceName("api-route")
+		var apiRoute apiroutev1.Route
+
+		var annotations = make(map[string]string)
+		var labels = make(map[string]string)
+
+		mergo.Merge(&labels, instance.Spec.Route.Labels, mergo.WithOverride)
+
+		err = r.Client.Get(
+			ctx, client.ObjectKey{Name: apiRouteName, Namespace: ns}, &apiRoute)
+		if err != nil && k8s_errors.IsNotFound(err) {
+			apiRoute = mkHTTPSRoute(apiRouteName, ns, apiServiceName, "/", apiPort, annotations, labels)
+			if instance.Spec.Route.Host != "" {
+				apiRoute.Spec.Host = instance.Spec.Route.Host
+			}
+			if err := r.setOwnerReference(owner, &apiRoute, logger, standalone); err != nil {
+				logger.Error(err, "Unable to set controller reference", "name", apiRouteName)
+				return reconcileLater(err)
+			}
+			logger.Info("Creating Route", "name", apiRouteName)
+			if err := r.Create(ctx, &apiRoute); err != nil {
+				logger.Error(err, "Unable to create route", "name", apiRoute)
+				return reconcileLater(err)
+			}
+		} else if err != nil {
+			// Handle the unexpected err
+			logger.Error(err, "Unable to get resource", "name", apiRouteName)
+			return reconcileLater(err)
+		} else {
+			// Eventually handle resource update
+			logger.Info("Resource fetched successfuly", "name", apiRouteName)
+		}
+	}
+
 	// Handle API deployment //
 	///////////////////////////
 
 	apiDeploymentName := resourceName("api")
-	apiDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      apiDeploymentName,
-			Namespace: req.Namespace,
-		},
-	}
-	apiReplicasCount := int32(1)
 
-	// Func to get the last condition of the Monocle API Deployment instance
-	apiDeploymentLastCondition := func() appsv1.DeploymentCondition {
-		if len(apiDeployment.Status.Conditions) > 0 {
-			return apiDeployment.Status.Conditions[0]
-		} else {
-			return appsv1.DeploymentCondition{}
-		}
-	}
-
-	monoclePublicURL := "https://" + instance.Spec.FQDN
+	monoclePublicURL := instance.Spec.PublicURL
 	logger.Info("Monocle public URL set to", "url", monoclePublicURL)
 
+	var currentApiDeployment appsv1.Deployment
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: req.Namespace}, &apiDeployment)
+		ctx, client.ObjectKey{Name: apiDeploymentName, Namespace: ns}, &currentApiDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
+		apiDeployment := appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      apiDeploymentName,
+				Namespace: ns,
+			},
+		}
+		apiReplicasCount := int32(1)
 		// Setup the deployment object
 		apiConfigMapVolumeName := resourceName("api-cm-volume")
 		// Once created Deployment selector is immutable
@@ -602,6 +743,7 @@ workspaces:
 				Labels: apiMatchLabels,
 				Annotations: map[string]string{
 					"apiSecretsVersion": apiSecretsVersion,
+					"monocleImage":      instance.Spec.Image,
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -623,7 +765,7 @@ workspaces:
 								},
 							},
 						},
-						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Image:   instance.Spec.Image,
 						Command: []string{"monocle", "api"},
 						EnvFrom: []corev1.EnvFromSource{
 							{
@@ -679,114 +821,67 @@ workspaces:
 				},
 			},
 		}
-		if err := ctrl_util.SetControllerReference(&instance, &apiDeployment, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", apiDeploymentName)
+		if err := r.setOwnerReference(owner, &apiDeployment, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", apiDeploymentName)
 			return reconcileLater(err)
 		}
 		logger.Info("Creating Deployment", "name", apiDeploymentName)
 		// Create the resource
 		if err := r.Create(ctx, &apiDeployment); err != nil {
-			logger.Info("Unable to create deployment", "name", apiDeploymentName)
+			logger.Error(err, "Unable to create deployment", "name", apiDeploymentName)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", apiDeploymentName)
+		logger.Error(err, "Unable to get resource", "name", apiDeploymentName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", apiDeploymentName)
 
+		// Handle Monocle image update
+		if currentApiDeployment.Spec.Template.Annotations["monocleImage"] != instance.Spec.Image {
+			currentApiDeployment.Spec.Template.Annotations["monocleImage"] = instance.Spec.Image
+			currentApiDeployment.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
+			// Update Deployment Resource to set the new container image
+			logger.Info("Start a rollout of the api due to container image change")
+			err := r.Update(ctx, &currentApiDeployment)
+			if err != nil {
+				logger.Error(err, "Unable to update resource", "name", apiDeploymentName)
+			}
+			return reconcileLater(err)
+		}
+
 		// Check pod template Annotation secretsVersion
-		err := r.rollOutWhenApiSecretsChange(ctx, logger, apiDeployment, apiSecretsVersion)
+		err := r.rollOutWhenApiSecretsChange(ctx, logger, currentApiDeployment, apiSecretsVersion)
 		if err != nil {
 			logger.Info("Unable to update spec deployment annotations", "name", apiDeploymentName)
 			reconcileLater(err)
 		}
 
 		// Check if Deployment Pod Annotation for ConfigMap resource version was updated
-		previousVersion := apiDeployment.Annotations["apiConfigVersion"]
+		previousVersion := currentApiDeployment.Annotations["apiConfigVersion"]
 		if previousVersion != apiConfigVersion {
 
 			logger.Info("Start the update-idents jobs because of api configMap update",
-				"name", apiDeployment.Name,
+				"name", currentApiDeployment.Name,
 				"previous configmap version", previousVersion,
 				"new configmap version", apiConfigVersion)
-			apiDeployment.Annotations["apiConfigVersion"] = apiConfigVersion
+			currentApiDeployment.Annotations["apiConfigVersion"] = apiConfigVersion
 			// Update Deployment Resource to set the new configMap resource version
-			err := r.Update(ctx, &apiDeployment)
+			err := r.Update(ctx, &currentApiDeployment)
 			if err != nil {
+				logger.Error(err, "Unable to update resource", "name", apiDeploymentName)
 				return reconcileLater(err)
 			}
 			// Trigger the job
-			err = triggerUpdateIdentsJob(r, ctx, instance, req.Namespace, logger, elasticUrlEnvVar, apiConfigMapName)
+			err = triggerUpdateIdentsJob(r, ctx, owner, ns, logger, elasticUrlEnvVar,
+				apiConfigMapName, instance.Spec.Image, standalone)
 			if err != nil {
-				logger.Info("Unable to trigger update-idents", "name", err)
-				reconcileLater(err)
+				logger.Error(err, "Unable to trigger update-idents", "name", err)
+				return reconcileLater(err)
 			}
 		}
-	}
-
-	// Handle ingress for api //
-	////////////////////////////
-
-	var apiIngressName = resourceName("api-ingress")
-	var apiIngress netv1.Ingress
-	var annotations = make(map[string]string)
-	annotations["route.openshift.io/termination"] = "edge"
-	apiIngress = netv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        apiIngressName,
-			Namespace:   req.Namespace,
-			Annotations: annotations,
-		},
-	}
-
-	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiIngressName, Namespace: req.Namespace}, &apiIngress)
-	if err != nil && k8s_errors.IsNotFound(err) {
-		pt := netv1.PathTypePrefix
-		apiIngress.Spec = netv1.IngressSpec{
-			Rules: []netv1.IngressRule{
-				{
-					Host: instance.Spec.FQDN,
-					IngressRuleValue: netv1.IngressRuleValue{
-						HTTP: &netv1.HTTPIngressRuleValue{
-							Paths: []netv1.HTTPIngressPath{
-								{
-									PathType: &pt,
-									Path:     "/",
-									Backend: netv1.IngressBackend{
-										Service: &netv1.IngressServiceBackend{
-											Name: apiSecretName,
-											Port: netv1.ServiceBackendPort{
-												Number: int32(apiPort),
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-		if err := ctrl_util.SetControllerReference(&instance, &apiIngress, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", apiIngressName)
-			return reconcileLater(err)
-		}
-		logger.Info("Creating Ingress", "name", apiIngressName)
-		if err := r.Create(ctx, &apiIngress); err != nil {
-			logger.Info("Unable to create ingress", "name", apiIngress)
-			return reconcileLater(err)
-		}
-	} else if err != nil {
-		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", apiIngressName)
-		return reconcileLater(err)
-	} else {
-		// Eventually handle resource update
-		logger.Info("Resource fetched successfuly", "name", apiIngressName)
 	}
 
 	////////////////////////////////////////////////////////
@@ -796,30 +891,23 @@ workspaces:
 	monocleAPIInternalURL := "http://" + apiServiceName + ":" + strconv.Itoa(apiPort)
 
 	crawlerDeploymentName := resourceName("crawler")
-	crawlerDeployment := appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      crawlerDeploymentName,
-			Namespace: req.Namespace,
-		},
-	}
-	crawlerReplicasCount := int32(1)
-	crawlerPort := 9001
-	crawlerMatchLabels := map[string]string{
-		"app":  "monocle",
-		"tier": "crawler",
-	}
-	// Func to get the last condition of the Monocle crawler Deployment instance
-	crawlerDeploymentLastCondition := func() appsv1.DeploymentCondition {
-		if len(crawlerDeployment.Status.Conditions) > 0 {
-			return crawlerDeployment.Status.Conditions[0]
-		} else {
-			return appsv1.DeploymentCondition{}
-		}
-	}
 
+	var currentCrawlerDeployment appsv1.Deployment
 	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: req.Namespace}, &crawlerDeployment)
+		ctx, client.ObjectKey{Name: crawlerDeploymentName, Namespace: ns}, &currentCrawlerDeployment)
 	if err != nil && k8s_errors.IsNotFound(err) {
+		crawlerDeployment := appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      crawlerDeploymentName,
+				Namespace: ns,
+			},
+		}
+		crawlerReplicasCount := int32(1)
+		crawlerPort := 9001
+		crawlerMatchLabels := map[string]string{
+			"app":  "monocle",
+			"tier": "crawler",
+		}
 		// Setup the deployment
 		crawlerConfigMapVolumeName := resourceName("crawler-cm-volume")
 		// Once created Deployment selector is immutable
@@ -835,6 +923,7 @@ workspaces:
 				Labels: crawlerMatchLabels,
 				Annotations: map[string]string{
 					"apiSecretsVersion": apiSecretsVersion,
+					"monocleImage":      instance.Spec.Image,
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -856,7 +945,7 @@ workspaces:
 								},
 							},
 						},
-						Image:   "quay.io/change-metrics/monocle:1.8.0",
+						Image:   instance.Spec.Image,
 						Command: []string{"monocle", "crawler"},
 						EnvFrom: []corev1.EnvFromSource{
 							{
@@ -912,26 +1001,39 @@ workspaces:
 				},
 			},
 		}
-		if err := ctrl_util.SetControllerReference(&instance, &crawlerDeployment, r.Scheme); err != nil {
-			logger.Info("Unable to set controller reference", "name", crawlerDeploymentName)
+		if err := r.setOwnerReference(owner, &crawlerDeployment, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", crawlerDeploymentName)
 			return reconcileLater(err)
 		}
 		logger.Info("Creating Deployment", "name", crawlerDeploymentName)
 		// Create the resource
 		if err := r.Create(ctx, &crawlerDeployment); err != nil {
-			logger.Info("Unable to create deployment", "name", crawlerDeploymentName)
+			logger.Error(err, "Unable to create deployment", "name", crawlerDeploymentName)
 			return reconcileLater(err)
 		}
 	} else if err != nil {
 		// Handle the unexpected err
-		logger.Info("Unable to get resource", "name", crawlerDeploymentName)
+		logger.Error(err, "Unable to get resource", "name", crawlerDeploymentName)
 		return reconcileLater(err)
 	} else {
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", crawlerDeploymentName)
 
+		// Handle Monocle image update
+		if currentCrawlerDeployment.Spec.Template.Annotations["monocleImage"] != instance.Spec.Image {
+			currentCrawlerDeployment.Spec.Template.Annotations["monocleImage"] = instance.Spec.Image
+			currentCrawlerDeployment.Spec.Template.Spec.Containers[0].Image = instance.Spec.Image
+			// Update Deployment Resource to set the new container image
+			logger.Info("Start a rollout of the crawler due to container image change")
+			err := r.Update(ctx, &currentCrawlerDeployment)
+			if err != nil {
+				logger.Error(err, "Unable to update resource", "name", apiDeploymentName)
+			}
+			return reconcileLater(err)
+		}
+
 		// Check pod template Annotation secretsVersion
-		err := r.rollOutWhenApiSecretsChange(ctx, logger, crawlerDeployment, apiSecretsVersion)
+		err := r.rollOutWhenApiSecretsChange(ctx, logger, currentCrawlerDeployment, apiSecretsVersion)
 		if err != nil {
 			logger.Info("Unable to update deployment annotations", "name", crawlerDeploymentName)
 			reconcileLater(err)
@@ -944,8 +1046,8 @@ workspaces:
 
 	instance.Status = monoclev1alpha1.MonocleStatus{
 		Elastic: serviceStatusConverter(elasticSearchReady()),
-		Api:     serviceStatusConverter(isDeploymentReady(apiDeploymentLastCondition())),
-		Crawler: serviceStatusConverter(isDeploymentReady(crawlerDeploymentLastCondition())),
+		Api:     serviceStatusConverter(isDeploymentReady(&currentApiDeployment)),
+		Crawler: serviceStatusConverter(isDeploymentReady(&currentCrawlerDeployment)),
 	}
 
 	status := r.Status()
@@ -964,13 +1066,13 @@ workspaces:
 		reconcileLater(nil)
 	}
 	// Continue reconcile until api is ready
-	if isDeploymentReady(apiDeploymentLastCondition()) == false {
-		logger.Info("monocle-api is not ready", "condition", apiDeploymentLastCondition())
+	if !isDeploymentReady(&currentApiDeployment) {
+		logger.Info("monocle-api is not ready")
 		return reconcileLater(nil)
 	}
 	// Continue reconcile until crawler is ready
-	if isDeploymentReady(crawlerDeploymentLastCondition()) == false {
-		logger.Info("monocle-crawler is not ready", "condition", crawlerDeploymentLastCondition())
+	if !isDeploymentReady(&currentCrawlerDeployment) {
+		logger.Info("monocle-crawler is not ready")
 		return reconcileLater(nil)
 	}
 

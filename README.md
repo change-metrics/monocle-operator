@@ -13,7 +13,6 @@ We use [Microshift](https://github.com/openshift/microshift) as development sand
 Thus the operator might have some adherences to OpenShift regarding:
 
 - The Security Context Contraints
-- The HTTPS ingress
 
 ## Installation
 
