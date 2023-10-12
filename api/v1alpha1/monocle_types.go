@@ -39,6 +39,8 @@ type MonocleSpec struct {
 type MonocleRoute struct {
 	// Labels to add to the Route resource
 	Labels map[string]string `json:"labels,omitempty"`
+	// Hostname to use for setting the Route
+	Host string `json:"host,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle

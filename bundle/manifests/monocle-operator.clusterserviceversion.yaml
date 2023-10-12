@@ -8,29 +8,20 @@ metadata:
           "apiVersion": "monocle.monocle.change-metrics.io/v1alpha1",
           "kind": "Monocle",
           "metadata": {
-            "labels": {
-              "app.kubernetes.io/created-by": "monocle-operator",
-              "app.kubernetes.io/instance": "monocle-sample",
-              "app.kubernetes.io/managed-by": "kustomize",
-              "app.kubernetes.io/name": "monocle",
-              "app.kubernetes.io/part-of": "monocle-operator"
-            },
             "name": "monocle-sample"
           },
-          "spec": {
-            "FQDN": "monocle.test"
-          }
+          "spec": {}
         }
       ]
     capabilities: Basic Install
     categories: Big Data, Developer Tools, Logging & Tracing
     containerImage: quay.io/change-metrics/monocle-operator:v0.0.1
-    createdAt: "2023-05-02T10:57:37Z"
+    createdAt: "2023-10-12T15:08:07Z"
     operators.operatorframework.io/builder: operator-sdk-v1.28.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/change-metrics/monocle-operator
     support: https://github.com/change-metrics
-  name: monocle-operator.v0.0.1
+  name: monocle-operator.v0.0.2
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -307,7 +298,7 @@ spec:
                 - --leader-elect
                 command:
                 - /manager
-                image: quay.io/change-metrics/monocle-operator:v0.0.1
+                image: quay.io/change-metrics/monocle-operator:v0.0.2
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -375,4 +366,4 @@ spec:
   provider:
     name: Change Metrics
     url: https://github.com/change-metrics
-  version: 0.0.1
+  version: 0.0.2

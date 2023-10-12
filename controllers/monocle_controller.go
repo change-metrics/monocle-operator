@@ -682,6 +682,9 @@ workspaces:
 			ctx, client.ObjectKey{Name: apiRouteName, Namespace: ns}, &apiRoute)
 		if err != nil && k8s_errors.IsNotFound(err) {
 			apiRoute = mkHTTPSRoute(apiRouteName, ns, apiServiceName, "/", apiPort, annotations, labels)
+			if instance.Spec.Route.Host != "" {
+				apiRoute.Spec.Host = instance.Spec.Route.Host
+			}
 			if err := r.setOwnerReference(owner, &apiRoute, logger, standalone); err != nil {
 				logger.Error(err, "Unable to set controller reference", "name", apiRouteName)
 				return reconcileLater(err)

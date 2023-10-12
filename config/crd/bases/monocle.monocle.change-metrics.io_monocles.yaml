@@ -46,6 +46,9 @@ spec:
               route:
                 description: If set a Route (Openshift) resource will be spawned
                 properties:
+                  host:
+                    description: Hostname to use for setting the Route
+                    type: string
                   labels:
                     additionalProperties:
                       type: string
