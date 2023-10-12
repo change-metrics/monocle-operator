@@ -28,9 +28,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	apiroutev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -183,6 +185,35 @@ func reconcileLater(err error) (ctrl.Result, error) {
 
 func stopReconcile() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
+}
+
+func mkHTTPSRoute(
+	name string, ns string, serviceName string, path string,
+	port int, annotations map[string]string) apiroutev1.Route {
+	tls := apiroutev1.TLSConfig{
+		InsecureEdgeTerminationPolicy: apiroutev1.InsecureEdgeTerminationPolicyRedirect,
+		Termination:                   apiroutev1.TLSTerminationEdge,
+	}
+	return apiroutev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   ns,
+			Annotations: annotations,
+		},
+		Spec: apiroutev1.RouteSpec{
+			TLS: &tls,
+			To: apiroutev1.RouteTargetReference{
+				Kind:   "Service",
+				Name:   serviceName,
+				Weight: pointer.Int32(100),
+			},
+			Port: &apiroutev1.RoutePort{
+				TargetPort: intstr.FromInt(port),
+			},
+			Path:           path,
+			WildcardPolicy: "None",
+		},
+	}
 }
 
 func (r *MonocleReconciler) setOwnerReference(
@@ -408,6 +439,10 @@ func (r *MonocleReconciler) ReconcileStep(ctx context.Context, ns string, instan
 						},
 						Env: []corev1.EnvVar{
 							{
+								Name:  "ES_JAVA_OPTS",
+								Value: "-Xms256m -Xmx256m",
+							},
+							{
 								Name:  "discovery.type",
 								Value: "single-node",
 							},
@@ -627,6 +662,35 @@ workspaces:
 	} else {
 		// Eventually handle resource update
 		logger.Info("Resource fetched successfuly", "name", apiServiceName)
+	}
+
+	// Handle Route for api //
+	////////////////////////////
+
+	var apiRouteName = resourceName("api-route")
+	var apiRoute apiroutev1.Route
+	var annotations = make(map[string]string)
+
+	err = r.Client.Get(
+		ctx, client.ObjectKey{Name: apiRouteName, Namespace: ns}, &apiRoute)
+	if err != nil && k8s_errors.IsNotFound(err) {
+		apiRoute = mkHTTPSRoute(apiRouteName, ns, apiServiceName, "/", apiPort, annotations)
+		if err := r.setOwnerReference(owner, &apiRoute, logger, standalone); err != nil {
+			logger.Error(err, "Unable to set controller reference", "name", apiRouteName)
+			return reconcileLater(err)
+		}
+		logger.Info("Creating Route", "name", apiRouteName)
+		if err := r.Create(ctx, &apiRoute); err != nil {
+			logger.Error(err, "Unable to create route", "name", apiRoute)
+			return reconcileLater(err)
+		}
+	} else if err != nil {
+		// Handle the unexpected err
+		logger.Error(err, "Unable to get resource", "name", apiRouteName)
+		return reconcileLater(err)
+	} else {
+		// Eventually handle resource update
+		logger.Info("Resource fetched successfuly", "name", apiRouteName)
 	}
 
 	// Handle API deployment //
