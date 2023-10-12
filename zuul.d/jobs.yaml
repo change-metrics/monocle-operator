@@ -10,11 +10,8 @@
         name: controller
         label: cloud-centos-9-stream
     vars:
-      logclassify_logserver_dir: ./
-      logclassify_debug: false
-      logclassify_report: true
+      logreduce_optin: true
       # microshift deployment
-      microshift_version: 4.12
       configure_dnsmasq: false
       disk_file_sparsed: true
       standard_user: false
