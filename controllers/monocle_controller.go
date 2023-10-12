@@ -22,13 +22,14 @@ import (
 	"strconv"
 	"time"
 
+	"dario.cat/mergo"
 	monoclev1alpha1 "github.com/change-metrics/monocle-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -189,7 +190,7 @@ func stopReconcile() (ctrl.Result, error) {
 
 func mkHTTPSRoute(
 	name string, ns string, serviceName string, path string,
-	port int, annotations map[string]string) apiroutev1.Route {
+	port int, annotations map[string]string, labels map[string]string) apiroutev1.Route {
 	tls := apiroutev1.TLSConfig{
 		InsecureEdgeTerminationPolicy: apiroutev1.InsecureEdgeTerminationPolicyRedirect,
 		Termination:                   apiroutev1.TLSTerminationEdge,
@@ -199,13 +200,14 @@ func mkHTTPSRoute(
 			Name:        name,
 			Namespace:   ns,
 			Annotations: annotations,
+			Labels:      labels,
 		},
 		Spec: apiroutev1.RouteSpec{
 			TLS: &tls,
 			To: apiroutev1.RouteTargetReference{
 				Kind:   "Service",
 				Name:   serviceName,
-				Weight: pointer.Int32(100),
+				Weight: ptr.To[int32](100),
 			},
 			Port: &apiroutev1.RoutePort{
 				TargetPort: intstr.FromInt(port),
@@ -667,30 +669,36 @@ workspaces:
 	// Handle Route for api //
 	////////////////////////////
 
-	var apiRouteName = resourceName("api-route")
-	var apiRoute apiroutev1.Route
-	var annotations = make(map[string]string)
+	if instance.Spec.Route != nil {
+		var apiRouteName = resourceName("api-route")
+		var apiRoute apiroutev1.Route
 
-	err = r.Client.Get(
-		ctx, client.ObjectKey{Name: apiRouteName, Namespace: ns}, &apiRoute)
-	if err != nil && k8s_errors.IsNotFound(err) {
-		apiRoute = mkHTTPSRoute(apiRouteName, ns, apiServiceName, "/", apiPort, annotations)
-		if err := r.setOwnerReference(owner, &apiRoute, logger, standalone); err != nil {
-			logger.Error(err, "Unable to set controller reference", "name", apiRouteName)
+		var annotations = make(map[string]string)
+		var labels = make(map[string]string)
+
+		mergo.Merge(&labels, instance.Spec.Route.Labels, mergo.WithOverride)
+
+		err = r.Client.Get(
+			ctx, client.ObjectKey{Name: apiRouteName, Namespace: ns}, &apiRoute)
+		if err != nil && k8s_errors.IsNotFound(err) {
+			apiRoute = mkHTTPSRoute(apiRouteName, ns, apiServiceName, "/", apiPort, annotations, labels)
+			if err := r.setOwnerReference(owner, &apiRoute, logger, standalone); err != nil {
+				logger.Error(err, "Unable to set controller reference", "name", apiRouteName)
+				return reconcileLater(err)
+			}
+			logger.Info("Creating Route", "name", apiRouteName)
+			if err := r.Create(ctx, &apiRoute); err != nil {
+				logger.Error(err, "Unable to create route", "name", apiRoute)
+				return reconcileLater(err)
+			}
+		} else if err != nil {
+			// Handle the unexpected err
+			logger.Error(err, "Unable to get resource", "name", apiRouteName)
 			return reconcileLater(err)
+		} else {
+			// Eventually handle resource update
+			logger.Info("Resource fetched successfuly", "name", apiRouteName)
 		}
-		logger.Info("Creating Route", "name", apiRouteName)
-		if err := r.Create(ctx, &apiRoute); err != nil {
-			logger.Error(err, "Unable to create route", "name", apiRoute)
-			return reconcileLater(err)
-		}
-	} else if err != nil {
-		// Handle the unexpected err
-		logger.Error(err, "Unable to get resource", "name", apiRouteName)
-		return reconcileLater(err)
-	} else {
-		// Eventually handle resource update
-		logger.Info("Resource fetched successfuly", "name", apiRouteName)
 	}
 
 	// Handle API deployment //

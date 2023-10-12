@@ -32,6 +32,13 @@ type MonocleSpec struct {
 	// Monocle container image
 	// +kubebuilder:default:="quay.io/change-metrics/monocle:1.9.0"
 	Image string `json:"image,omitempty"`
+	// If set a Route (Openshift) resource will be spawned
+	Route *MonocleRoute `json:"route,omitempty"`
+}
+
+type MonocleRoute struct {
+	// Labels to add to the Route resource
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // MonocleStatus defines the observed state of Monocle

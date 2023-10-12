@@ -43,6 +43,15 @@ spec:
                 description: Public URL to access the Monocle API
                 pattern: ^https?:\/\/.+$
                 type: string
+              route:
+                description: If set a Route (Openshift) resource will be spawned
+                properties:
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: Labels to add to the Route resource
+                    type: object
+                type: object
               storageClassName:
                 description: Storage class name when creating the PVC
                 type: string
