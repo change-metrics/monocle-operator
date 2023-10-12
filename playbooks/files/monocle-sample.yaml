@@ -1,6 +1,7 @@
 apiVersion: monocle.monocle.change-metrics.io/v1alpha1
 kind: Monocle
 metadata:
+  name: monocle-sample
 spec:
   publicURL: https://monocle.test
   route:
