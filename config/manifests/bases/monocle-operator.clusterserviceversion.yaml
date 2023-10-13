@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     categories: Big Data, Developer Tools, Logging & Tracing
-    containerImage: quay.io/change-metrics/monocle-operator:v0.0.1
+    containerImage: quay.io/change-metrics/monocle-operator:v0.0.2
     repository: https://github.com/change-metrics/monocle-operator
     support: https://github.com/change-metrics
   name: monocle-operator.v0.0.0
@@ -65,4 +65,5 @@ spec:
   provider:
     name: Change Metrics
     url: https://github.com/change-metrics
+  replaces: monocle-operator.v0.0.1
   version: 0.0.0
