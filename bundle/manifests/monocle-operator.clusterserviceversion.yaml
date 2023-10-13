@@ -10,13 +10,15 @@ metadata:
           "metadata": {
             "name": "monocle-sample"
           },
-          "spec": {}
+          "spec": {
+            "publicURL": "https://my-monocle-instance.com"
+          }
         }
       ]
     capabilities: Basic Install
     categories: Big Data, Developer Tools, Logging & Tracing
     containerImage: quay.io/change-metrics/monocle-operator:v0.0.1
-    createdAt: "2023-10-12T15:08:07Z"
+    createdAt: "2023-10-13T09:18:15Z"
     operators.operatorframework.io/builder: operator-sdk-v1.28.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/change-metrics/monocle-operator
