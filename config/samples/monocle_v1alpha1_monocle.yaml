@@ -2,4 +2,5 @@ apiVersion: monocle.monocle.change-metrics.io/v1alpha1
 kind: Monocle
 metadata:
   name: monocle-sample
-spec: {}
+spec:
+  publicURL: https://my-monocle-instance.com
