@@ -8,7 +8,7 @@ The operator is currently in alpha version and should not be used in production.
 
 The status is: Work In Progress.
 
-We use [Microshift](https://github.com/openshift/microshift) as development sandbox.
+We use [Microshift](https://github.com/openshift/microshift) as development sandbox and for CI.
 
 Thus the operator might have some adherences to OpenShift regarding:
 
@@ -37,6 +37,10 @@ kubectl create -f https://raw.githubusercontent.com/change-metrics/monocle-opera
 The role `monocle-operator-monocle-editor-role` is installed by the `operator.yml`. This role can be assigned via
 a `RoleBinding` to users.
 
+### Via OLM
+
+`monocle-operator` is packaged into an OLM package available on [operatorshub.io](https://operatorhub.io/operator/monocle-operator).
+
 ## Status
 
 ### Phase 1 - Basic Install
@@ -58,7 +62,7 @@ tasks:
 
 Support minor version upgrade
 
-tasks: TBD
+- [] Enable upgrade test in CI
 
 ### Phase 3 - Full lifecycle
 
@@ -146,6 +150,28 @@ start a fresh deployment.
 $ kubectl delete pvc monocle-sample-elastic-data-volume-monocle-sample-elastic-0
 ```
 
+### Run the operator in standalone dev mode
+
+This mode does not require the CRD to be installed on the cluster thus you don't
+need the cluster-admin right to run the `monocle-operator`. This mode is for development
+purpose only.
+
+The following command takes as paramaters a `Namespace` and a `YAML file that describe the Monocle Custom Resource`.
+
+```Shell
+go run ./main.go --cr config/sample/monocle_v1alpha1_monocle.yaml --ns monocle
+```
+
+Running with those paramaters triggers the `standalone` mode which does not start the controller-runtime's Manager
+but instead uses the controller-runtime's Client. This mode prevents the `Reconcile` function to look at any
+`Monocle` Custom Resource set in any `Namespace` but only relies on the Custom Resource passed as the YAML file.
+
+This command performs one or more `Reconcile` calls until the Monocle resources (deployment, statefulset, ...) are
+detected as ready, then exits.
+
+Most of the code involved to reconcile the state is covered by this mode and it make it useful to facilitate
+the operator development.
+
 ## Generate assets
 
 A CI post job build and publish the operator and OLM bundle container images
@@ -181,7 +207,7 @@ make bundle-container-push
 kubectl create ns bundle-catalog-ns
 # It seems that a batch job fails if not added to privileged
 oc adm policy add-scc-to-user privileged system:serviceaccount:bundle-catalog-ns:default
-operator-sdk --verbose run bundle quay.io/change-metrics/monocle-operator-bundle:v0.0.1 \
+operator-sdk --verbose run bundle quay.io/change-metrics/monocle-operator-bundle:v0.0.2 \
     --namespace bundle-catalog-ns --security-context-config restricted
 ```
 

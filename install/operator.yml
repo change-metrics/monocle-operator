@@ -398,7 +398,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: quay.io/change-metrics/monocle-operator:v0.0.1
+        image: quay.io/change-metrics/monocle-operator:v0.0.2
         livenessProbe:
           httpGet:
             path: /healthz
