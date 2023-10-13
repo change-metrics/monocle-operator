@@ -369,3 +369,4 @@ spec:
     name: Change Metrics
     url: https://github.com/change-metrics
   version: 0.0.2
+  replaces: monocle-operator.v0.0.1
